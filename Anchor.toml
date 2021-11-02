@@ -1,6 +1,9 @@
 [programs.localnet]
 locker = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
 
+[programs.devnet]
+locker = "GRNoyXVJgx2hbej9ZsQow6G4uJUscyLfk1a1Q9qe73ek"
+
 [registry]
 url = "https://anchor.projectserum.com"
 
