@@ -1,0 +1,197 @@
+{
+  "version": "0.0.0",
+  "name": "locker",
+  "instructions": [
+    {
+      "name": "createLocker",
+      "accounts": [
+        {
+          "name": "locker",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "creator",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "owner",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "fundingWalletAuthority",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "fundingWallet",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "vaultAuthority",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "vault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "feeWallet",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "clock",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": "CreateLockerArgs"
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Locker",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "publicKey"
+          },
+          {
+            "name": "linearEmission",
+            "type": {
+              "option": {
+                "defined": "LinearEmission"
+              }
+            }
+          },
+          {
+            "name": "countryCode",
+            "type": "u16"
+          },
+          {
+            "name": "currentUnlockDate",
+            "type": "i64"
+          },
+          {
+            "name": "creator",
+            "type": "publicKey"
+          },
+          {
+            "name": "originalUnlockDate",
+            "type": "i64"
+          }
+        ]
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "LinearEmission",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "emissionStart",
+            "type": "i64"
+          },
+          {
+            "name": "emissionEnd",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CreateLockerArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "unlockDate",
+            "type": "i64"
+          },
+          {
+            "name": "countryCode",
+            "type": "u16"
+          },
+          {
+            "name": "linearEmission",
+            "type": {
+              "option": {
+                "defined": "LinearEmission"
+              }
+            }
+          },
+          {
+            "name": "lockerBump",
+            "type": "u8"
+          },
+          {
+            "name": "vaultBump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": 300,
+      "name": "UnlockInThePast",
+      "msg": "The given unlock date is in the past"
+    },
+    {
+      "code": 301,
+      "name": "InvalidFeeWallet",
+      "msg": "The given fee wallet is not associated with required fee wallet"
+    },
+    {
+      "code": 302,
+      "name": "IntegerOverflow"
+    },
+    {
+      "code": 303,
+      "name": "NothingToLock"
+    },
+    {
+      "code": 304,
+      "name": "InvalidAmountTransferred"
+    },
+    {
+      "code": 305,
+      "name": "InvalidPeriod"
+    }
+  ],
+  "metadata": {
+    "address": "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+  }
+}

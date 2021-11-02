@@ -1,18 +1,17 @@
-use anchor_lang::{prelude::*, solana_program::clock::UnixTimestamp};
+use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::get_associated_token_address,
     token::{self, Token, TokenAccount, Transfer},
 };
 
 use az::CheckedAs;
-use borsh::{BorshDeserialize, BorshSerialize};
 
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
 mod fee {
     use super::*;
 
-    declare_id!("22222222222222222222222222222222222222222222");
+    declare_id!("7vPbNKWdgS1dqx6ZnJR8dU9Mo6Tsgwp3S5rALuANwXiJ");
 
     pub const FEE: u64 = 35;
 }
@@ -33,7 +32,7 @@ pub enum ErrorCode {
 pub mod locker {
     use super::*;
 
-    pub fn create_lock(ctx: Context<CreateLocker>, args: CreateLockerArgs) -> Result<()> {
+    pub fn create_locker(ctx: Context<CreateLocker>, args: CreateLockerArgs) -> Result<()> {
         let locker = &mut ctx.accounts.locker;
 
         let now = ctx.accounts.clock.unix_timestamp;
@@ -91,7 +90,7 @@ pub mod locker {
         ctx.accounts.funding_wallet.reload()?;
         let amount_after_fee = ctx.accounts.funding_wallet.amount;
         require!(
-            amount_after_fee - amount_before == lock_fee,
+            amount_before - amount_after_fee  == lock_fee,
             InvalidAmountTransferred
         );
 
@@ -111,7 +110,7 @@ pub mod locker {
         ctx.accounts.funding_wallet.reload()?;
         let amount_final = ctx.accounts.funding_wallet.amount;
         require!(
-            amount_final - amount_after_fee == amount_to_lock,
+            amount_after_fee - amount_final == amount_to_lock,
             InvalidAmountTransferred
         );
 
@@ -124,10 +123,10 @@ pub struct Locker {
     owner: Pubkey,
     linear_emission: Option<LinearEmission>,
     country_code: u16,
-    current_unlock_date: UnixTimestamp,
+    current_unlock_date: i64,
     // `creator` and `original_unlock_date` help to generate PDA
     creator: Pubkey,
-    original_unlock_date: UnixTimestamp,
+    original_unlock_date: i64,
 }
 
 impl Default for Locker {
@@ -143,16 +142,16 @@ impl Default for Locker {
     }
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Clone)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct LinearEmission {
-    emission_start: UnixTimestamp,
-    emission_end: UnixTimestamp,
+    emission_start: i64,
+    emission_end: i64,
 }
 
-#[derive(BorshSerialize, BorshDeserialize)]
+#[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct CreateLockerArgs {
     amount: u64,
-    unlock_date: UnixTimestamp,
+    unlock_date: i64,
     country_code: u16,
     linear_emission: Option<LinearEmission>,
     locker_bump: u8,
@@ -177,6 +176,7 @@ pub struct CreateLocker<'info> {
     owner: AccountInfo<'info>,
     #[account(signer)]
     funding_wallet_authority: AccountInfo<'info>,
+    #[account(mut)]
     funding_wallet: Account<'info, TokenAccount>,
     #[account(
         seeds = [
@@ -186,10 +186,12 @@ pub struct CreateLocker<'info> {
     )]
     vault_authority: AccountInfo<'info>,
     #[account(
+        mut,
         constraint = vault.mint == funding_wallet.mint
     )]
     vault: Account<'info, TokenAccount>,
     #[account(
+        mut,
         constraint = fee_wallet.mint == funding_wallet.mint
     )]
     fee_wallet: Account<'info, TokenAccount>,
