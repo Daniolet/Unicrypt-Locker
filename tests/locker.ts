@@ -35,7 +35,9 @@ describe('locker', () => {
       fundingWalletAuthority: creator,
       fundingWallet,
       vault,
-    });
+    },
+      lockerClient.LOCALNET
+    );
 
     const lockers = await program.account.locker.all();
 
@@ -58,5 +60,24 @@ describe('locker', () => {
 
     const vaultAccount = await lockerClient.utils.getTokenAccount(provider, vault);
     assert.ok(vaultAccount.amount.eqn(9965));
+  });
+
+  it('Relocks the locker', async () => {
+    const lockers = await program.account.locker.all();
+    const lockerAccountBefore = lockers[0];
+
+    const newUnlockDate = unlockDate.addn(20);
+
+    await lockerClient.relock(provider, {
+      unlockDate: newUnlockDate,
+      locker: lockerAccountBefore.publicKey,
+      owner: lockerAccountBefore.account.owner,
+    },
+      lockerClient.LOCALNET
+    );
+
+    const lockerAccountAfter = await program.account.locker.fetch(lockerAccountBefore.publicKey);
+    assert.ok(!lockerAccountAfter.currentUnlockDate.eq(lockerAccountAfter.originalUnlockDate));
+    assert.ok(lockerAccountAfter.currentUnlockDate.eq(newUnlockDate));
   });
 });

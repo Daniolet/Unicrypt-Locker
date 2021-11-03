@@ -47,3 +47,12 @@ await lockerClient.createLocker(provider, {
     vault,
 }
 ```
+
+## Relock
+
+`relock(provider, unlockDate)`
+
+* `provider` -- solana web3 provider
+* `unlockDate` -- new unlock date
+    - should be later than original one
+    - anchor.BN

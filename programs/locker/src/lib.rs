@@ -26,6 +26,7 @@ pub enum ErrorCode {
     NothingToLock,
     InvalidAmountTransferred,
     InvalidPeriod,
+    CannotUnlockEarlier,
 }
 
 #[program]
@@ -53,6 +54,8 @@ pub mod locker {
 
         locker.owner = ctx.accounts.owner.key();
         locker.creator = ctx.accounts.creator.key();
+
+        locker.bump = args.locker_bump;
 
         let associated_token_account =
             get_associated_token_address(&fee::ID, &ctx.accounts.funding_wallet.mint);
@@ -90,7 +93,7 @@ pub mod locker {
         ctx.accounts.funding_wallet.reload()?;
         let amount_after_fee = ctx.accounts.funding_wallet.amount;
         require!(
-            amount_before - amount_after_fee  == lock_fee,
+            amount_before - amount_after_fee == lock_fee,
             InvalidAmountTransferred
         );
 
@@ -116,6 +119,19 @@ pub mod locker {
 
         Ok(())
     }
+
+    pub fn relock(ctx: Context<Relock>, unlock_date: i64) -> Result<()> {
+        let locker = &mut ctx.accounts.locker;
+
+        require!(
+            unlock_date > locker.current_unlock_date,
+            CannotUnlockEarlier
+        );
+
+        locker.current_unlock_date = unlock_date;
+
+        Ok(())
+    }
 }
 
 #[account]
@@ -127,6 +143,7 @@ pub struct Locker {
     // `creator` and `original_unlock_date` help to generate PDA
     creator: Pubkey,
     original_unlock_date: i64,
+    bump: u8,
 }
 
 impl Default for Locker {
@@ -138,6 +155,7 @@ impl Default for Locker {
             original_unlock_date: Default::default(),
             current_unlock_date: Default::default(),
             country_code: Default::default(),
+            bump: Default::default(),
         }
     }
 }
@@ -199,4 +217,22 @@ pub struct CreateLocker<'info> {
     clock: Sysvar<'info, Clock>,
     system_program: Program<'info, System>,
     token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct Relock<'info> {
+    #[account(
+        mut,
+        seeds = [
+            locker.creator.key().as_ref(),
+            locker.original_unlock_date.to_be_bytes().as_ref(),
+        ],
+        bump = locker.bump
+    )]
+    locker: ProgramAccount<'info, Locker>,
+    #[account(
+        signer,
+        constraint = locker.owner == owner.key()
+    )]
+    owner: AccountInfo<'info>,
 }
