@@ -80,4 +80,34 @@ describe('locker', () => {
     assert.ok(!lockerAccountAfter.currentUnlockDate.eq(lockerAccountAfter.originalUnlockDate));
     assert.ok(lockerAccountAfter.currentUnlockDate.eq(newUnlockDate));
   });
+
+  it('Transfers the ownership', async () => {
+    const lockers = await program.account.locker.all();
+    const lockerAccountBefore = lockers[0];
+
+    const newOwner = anchor.web3.Keypair.generate();
+
+    await lockerClient.transferOwnership(provider, {
+      locker: lockerAccountBefore.publicKey,
+      owner: lockerAccountBefore.account.owner,
+      newOwner: newOwner.publicKey,
+    },
+      lockerClient.LOCALNET
+    );
+
+    const lockerAccountAfter = await program.account.locker.fetch(lockerAccountBefore.publicKey);
+    assert.ok(lockerAccountAfter.owner.equals(newOwner.publicKey));
+
+    await lockerClient.transferOwnership(provider, {
+      locker: lockerAccountBefore.publicKey,
+      owner: newOwner.publicKey,
+      newOwner: lockerAccountBefore.account.owner,
+      signers: [newOwner],
+    },
+      lockerClient.LOCALNET
+    );
+
+    const lockerAccountFinal = await program.account.locker.fetch(lockerAccountBefore.publicKey);
+    assert.ok(lockerAccountFinal.owner.equals(lockerAccountBefore.account.owner));
+  });
 });

@@ -90,6 +90,27 @@
           "type": "i64"
         }
       ]
+    },
+    {
+      "name": "transferOwnership",
+      "accounts": [
+        {
+          "name": "locker",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "owner",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "newOwner",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
     }
   ],
   "accounts": [

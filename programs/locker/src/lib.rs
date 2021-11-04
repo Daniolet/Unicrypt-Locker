@@ -132,6 +132,14 @@ pub mod locker {
 
         Ok(())
     }
+
+    pub fn transfer_ownership(ctx: Context<TransferOwnership>) -> Result<()> {
+        let locker = &mut ctx.accounts.locker;
+
+        locker.owner = ctx.accounts.new_owner.key();
+
+        Ok(())
+    }
 }
 
 #[account]
@@ -235,4 +243,23 @@ pub struct Relock<'info> {
         constraint = locker.owner == owner.key()
     )]
     owner: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct TransferOwnership<'info> {
+    #[account(
+        mut,
+        seeds = [
+            locker.creator.key().as_ref(),
+            locker.original_unlock_date.to_be_bytes().as_ref(),
+        ],
+        bump = locker.bump
+    )]
+    locker: ProgramAccount<'info, Locker>,
+    #[account(
+        signer,
+        constraint = locker.owner == owner.key()
+    )]
+    owner: AccountInfo<'info>,
+    new_owner: AccountInfo<'info>,
 }

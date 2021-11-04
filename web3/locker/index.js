@@ -96,11 +96,30 @@ async function relock(provider, args, cluster) {
   );
 }
 
+async function transferOwnership(provider, args, cluster) {
+  const program = initProgram(cluster, provider);
+
+  const rpcArgs = {
+    accounts: {
+      locker: args.locker,
+      owner: args.owner,
+      newOwner: args.newOwner,
+    }
+  };
+
+  if (args.signers !== undefined) {
+    rpcArgs.signers = args.signers;
+  }
+
+  await program.rpc.transferOwnership(rpcArgs);
+}
+
 module.exports = {
   LOCALNET,
   DEVNET,
   createLocker,
   relock,
+  transferOwnership,
   feeWallet,
   utils,
 };
