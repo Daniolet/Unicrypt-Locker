@@ -111,6 +111,52 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "withdrawFunds",
+      "accounts": [
+        {
+          "name": "locker",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "owner",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "vaultAuthority",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "vault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "targetWallet",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "clock",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -124,20 +170,34 @@
             "type": "publicKey"
           },
           {
-            "name": "linearEmission",
-            "type": {
-              "option": {
-                "defined": "LinearEmission"
-              }
-            }
-          },
-          {
             "name": "countryCode",
             "type": "u16"
           },
           {
             "name": "currentUnlockDate",
             "type": "i64"
+          },
+          {
+            "name": "startEmission",
+            "type": {
+              "option": "i64"
+            }
+          },
+          {
+            "name": "depositedAmount",
+            "type": "u64"
+          },
+          {
+            "name": "withdrawnAmount",
+            "type": "u64"
+          },
+          {
+            "name": "vault",
+            "type": "publicKey"
+          },
+          {
+            "name": "vaultBump",
+            "type": "u8"
           },
           {
             "name": "creator",
@@ -157,22 +217,6 @@
   ],
   "types": [
     {
-      "name": "LinearEmission",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "emissionStart",
-            "type": "i64"
-          },
-          {
-            "name": "emissionEnd",
-            "type": "i64"
-          }
-        ]
-      }
-    },
-    {
       "name": "CreateLockerArgs",
       "type": {
         "kind": "struct",
@@ -190,11 +234,9 @@
             "type": "u16"
           },
           {
-            "name": "linearEmission",
+            "name": "startEmission",
             "type": {
-              "option": {
-                "defined": "LinearEmission"
-              }
+              "option": "i64"
             }
           },
           {
@@ -238,7 +280,15 @@
     },
     {
       "code": 306,
-      "name": "CannotUnlockEarlier"
+      "name": "CannotUnlockToEarlierDate"
+    },
+    {
+      "code": 307,
+      "name": "TooEarlyToWithdraw"
+    },
+    {
+      "code": 308,
+      "name": "NoFundsLeft"
     }
   ],
   "metadata": {

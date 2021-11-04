@@ -8,13 +8,12 @@ const creator = provider.wallet.publicKey;
 await lockerClient.createLocker(provider, {
       unlockDate: new anchor.BN(Date.now() + 20),
       countryCode: 54,
-      linearEmission: null,
+      startEmission: null,
       amount: new anchor.BN(10000),
       creator,
       owner: creator,
       fundingWalletAuthority: creator,
       fundingWallet,
-      vault,
     });
 ```
 
@@ -30,7 +29,7 @@ await lockerClient.createLocker(provider, {
     // some number
     countryCode,
     // null for now
-    linearEmission,
+    startEmission,
     // amount to lock of type anchor.BN
     amount,
     // provider.wallet.publicKey
@@ -43,10 +42,14 @@ await lockerClient.createLocker(provider, {
     fundingWalletAuthority,
     // address of source SPL token account
     fundingWallet,
-    // address of target SPL token account
-    vault,
 }
 ```
+
+## Get Lockers
+
+`getLockers(provider)` -- returns created lockers.
+
+* `provider` -- solana web3 provider
 
 ## Relock
 
@@ -56,3 +59,37 @@ await lockerClient.createLocker(provider, {
 * `unlockDate` -- new unlock date
     - should be later than original one
     - anchor.BN
+
+## Transfer Ownership
+
+`transferOwnership(provider, args)`
+
+* `provider` -- solana web3 provider
+* `args`:
+
+```js
+{
+    // Locker account as returned from `getLockers`
+    locker,
+    // Public key of a new owner
+    newOwner,
+}
+```
+
+## Withdraw Funds
+
+`withdrawFunds(provider, args)`
+
+* `provider` -- solana web3 provider
+* `args`:
+
+```js
+{
+    // Amount to withdraw. anchor.BN
+    amount,
+    // Locker account as returned from `getLockers`
+    locker,
+    // Public key of a wallet to transfer tokens to
+    targetWallet,
+}
+```

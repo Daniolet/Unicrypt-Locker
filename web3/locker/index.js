@@ -6,6 +6,7 @@ const utils = require('./utils');
 
 const lockerIdl = require('./locker.json');
 const lockerIdlDevnet = require('./locker.devnet.json');
+const { splitArgsAndCtx } = require('@project-serum/anchor');
 
 const programIdLocalnet = new solana_web3.PublicKey(lockerIdl.metadata.address);
 const programIdDevnet = new solana_web3.PublicKey(lockerIdlDevnet.metadata.address);
@@ -44,15 +45,16 @@ async function createLocker(provider, args, cluster) {
     program.programId,
   );
 
-  const vaultAccount = await utils.getTokenAccount(provider, args.vault);
-  const vaultMint = new spl.Token(
+  const fundingWalletAccount = await utils.getTokenAccount(provider, args.fundingWallet);
+  const mint = new spl.Token(
     provider.connection,
-    vaultAccount.mint,
+    fundingWalletAccount.mint,
     utils.TOKEN_PROGRAM_ID,
     provider.wallet.payer
   );
 
-  const feeTokenWallet = await vaultMint.getOrCreateAssociatedAccountInfo(feeWallet);
+  const vault = await utils.createTokenAccount(provider, mint.publicKey, vaultAuthority);
+  const feeTokenWallet = await mint.getOrCreateAssociatedAccountInfo(feeWallet);
 
   await program.rpc.createLocker(
     {
@@ -60,7 +62,7 @@ async function createLocker(provider, args, cluster) {
       lockerBump,
       vaultBump,
       countryCode: args.countryCode,
-      linearEmission: args.linearEmission,
+      startEmission: args.startEmission,
       amount: args.amount,
     },
     {
@@ -68,7 +70,7 @@ async function createLocker(provider, args, cluster) {
         locker,
         creator: args.creator,
         owner: args.owner,
-        vault: args.vault,
+        vault,
         vaultAuthority,
         fundingWalletAuthority: args.fundingWalletAuthority,
         fundingWallet: args.fundingWallet,
@@ -82,6 +84,11 @@ async function createLocker(provider, args, cluster) {
   );
 }
 
+async function getLockers(provider, cluster) {
+  const program = initProgram(cluster, provider);
+  return await program.account.locker.all();
+}
+
 async function relock(provider, args, cluster) {
   const program = initProgram(cluster, provider);
 
@@ -89,8 +96,8 @@ async function relock(provider, args, cluster) {
     args.unlockDate,
     {
       accounts: {
-        locker: args.locker,
-        owner: args.owner,
+        locker: args.locker.publicKey,
+        owner: args.locker.account.owner,
       }
     }
   );
@@ -101,8 +108,8 @@ async function transferOwnership(provider, args, cluster) {
 
   const rpcArgs = {
     accounts: {
-      locker: args.locker,
-      owner: args.owner,
+      locker: args.locker.publicKey,
+      owner: args.locker.account.owner,
       newOwner: args.newOwner,
     }
   };
@@ -114,12 +121,42 @@ async function transferOwnership(provider, args, cluster) {
   await program.rpc.transferOwnership(rpcArgs);
 }
 
+async function withdrawFunds(provider, args, cluster) {
+  const program = initProgram(cluster, provider);
+
+  const vaultAuthority = await anchor.web3.PublicKey.createProgramAddress(
+    [
+      args.locker.publicKey.toBuffer(),
+      [args.locker.account.vaultBump]
+    ],
+    program.programId,
+  );
+
+  await program.rpc.withdrawFunds(
+    args.amount,
+    {
+      accounts: {
+        locker: args.locker.publicKey,
+        owner: args.locker.account.owner,
+        vaultAuthority,
+        vault: args.locker.account.vault,
+        targetWallet: args.targetWallet,
+
+        clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+        tokenProgram: utils.TOKEN_PROGRAM_ID,
+      }
+    }
+  );
+}
+
 module.exports = {
   LOCALNET,
   DEVNET,
   createLocker,
+  getLockers,
   relock,
   transferOwnership,
+  withdrawFunds,
   feeWallet,
   utils,
 };
