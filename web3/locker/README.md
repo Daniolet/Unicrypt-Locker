@@ -51,6 +51,11 @@ await lockerClient.createLocker(provider, {
 
 * `provider` -- solana web3 provider
 
+`getLockersOwnerBy(provider, owner)` -- returns lockers owned by specific account.
+
+* `provider` -- solana web3 provider
+* `owner` -- account public key
+
 ## Relock
 
 `relock(provider, unlockDate)`
@@ -91,5 +96,23 @@ await lockerClient.createLocker(provider, {
     locker,
     // Public key of a wallet to transfer tokens to
     targetWallet,
+}
+```
+
+## Split the Locker
+
+`splitLocker(provider, args)`
+
+* `provider` -- solana web3 provider
+* `args`:
+
+```js
+{
+    // Amount to deposit in a new locker. anchor.BN
+    amount,
+    // Locker account as returned from `getLockers`
+    locker,
+    // Public key of a new owner
+    newOwner,
 }
 ```

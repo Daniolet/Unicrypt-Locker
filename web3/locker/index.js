@@ -89,6 +89,22 @@ async function getLockers(provider, cluster) {
   return await program.account.locker.all();
 }
 
+async function getLockersOwnedBy(provider, owner, cluster) {
+  const program = initProgram(cluster, provider);
+  if (owner === undefined) {
+    owner = provider.wallet.publicKey;
+  }
+  return await program.account.locker.all([
+    {
+      memcmp: {
+        // 8 bytes for discriminator
+        offset: 8,
+        bytes: owner.toBase58(),
+      },
+    },
+  ]);
+}
+
 async function relock(provider, args, cluster) {
   const program = initProgram(cluster, provider);
 
@@ -149,14 +165,77 @@ async function withdrawFunds(provider, args, cluster) {
   );
 }
 
+async function splitLocker(provider, args, cluster) {
+  const program = initProgram(cluster, provider);
+
+  const oldVaultAuthority = await anchor.web3.PublicKey.createProgramAddress(
+    [
+      args.locker.publicKey.toBuffer(),
+      [args.locker.account.vaultBump]
+    ],
+    program.programId,
+  );
+
+  const [newLocker, newLockerBump] = await anchor.web3.PublicKey.findProgramAddress(
+    [
+      args.locker.account.owner.toBuffer(),
+      args.locker.account.currentUnlockDate.toBuffer('be', 8),
+    ],
+    program.programId
+  );
+
+  const [newVaultAuthority, newVaultBump] = await anchor.web3.PublicKey.findProgramAddress(
+    [
+      newLocker.toBuffer(),
+    ],
+    program.programId,
+  );
+
+  const vaultAccount = await utils.getTokenAccount(provider, args.locker.account.vault);
+  const mint = new spl.Token(
+    provider.connection,
+    vaultAccount.mint,
+    utils.TOKEN_PROGRAM_ID,
+    provider.wallet.payer
+  );
+
+  const newVault = await utils.createTokenAccount(provider, mint.publicKey, newVaultAuthority);
+
+  await program.rpc.splitLocker(
+    {
+      amount: args.amount,
+      lockerBump: newLockerBump,
+      vaultBump: newVaultBump,
+    },
+    {
+      accounts: {
+        oldLocker: args.locker.publicKey,
+        oldOwner: args.locker.account.owner,
+        oldVaultAuthority,
+        oldVault: args.locker.account.vault,
+
+        newLocker,
+        newOwner: args.newOwner,
+        newVaultAuthority,
+        newVault,
+
+        systemProgram: anchor.web3.SystemProgram.programId,
+        tokenProgram: utils.TOKEN_PROGRAM_ID,
+      }
+    }
+  );
+}
+
 module.exports = {
   LOCALNET,
   DEVNET,
   createLocker,
   getLockers,
+  getLockersOwnedBy,
   relock,
   transferOwnership,
   withdrawFunds,
+  splitLocker,
   feeWallet,
   utils,
 };

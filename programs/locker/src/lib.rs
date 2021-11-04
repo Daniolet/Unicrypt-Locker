@@ -28,7 +28,7 @@ pub enum ErrorCode {
     InvalidPeriod,
     CannotUnlockToEarlierDate,
     TooEarlyToWithdraw,
-    NoFundsLeft,
+    InvalidAmount,
 }
 
 #[program]
@@ -92,7 +92,6 @@ pub mod locker {
         require!(amount_to_lock > 0, NothingToLock);
 
         locker.deposited_amount = amount_to_lock;
-        locker.withdrawn_amount = 0;
 
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -137,11 +136,8 @@ pub mod locker {
 
     pub fn withdraw_funds(ctx: Context<WithdrawFunds>, amount: u64) -> Result<()> {
         let now = ctx.accounts.clock.unix_timestamp;
-        let locker = &mut ctx.accounts.locker;
-
-        let balance = locker.deposited_amount - locker.withdrawn_amount;
-
-        require!(balance > 0, NoFundsLeft);
+        let locker = &ctx.accounts.locker;
+        let vault = &mut ctx.accounts.vault;
 
         let amount_to_transfer = match locker.start_emission {
             Some(start_emission) => {
@@ -156,14 +152,14 @@ pub mod locker {
             }
             None => {
                 require!(now > locker.current_unlock_date, TooEarlyToWithdraw);
-                amount.min(balance)
+                amount.min(vault.amount)
             }
         };
 
-        require!(amount_to_transfer > 0, InvalidAmountTransferred);
-        require!(amount_to_transfer < balance, InvalidAmountTransferred);
+        require!(amount_to_transfer > 0, InvalidAmount);
+        require!(amount_to_transfer <= vault.amount, InvalidAmount);
 
-        let amount_before = ctx.accounts.vault.amount;
+        let amount_before = vault.amount;
 
         let locker_key = locker.key();
         let seeds = &[locker_key.as_ref(), &[locker.vault_bump]];
@@ -172,7 +168,7 @@ pub mod locker {
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
-                from: ctx.accounts.vault.to_account_info(),
+                from: vault.to_account_info(),
                 to: ctx.accounts.target_wallet.to_account_info(),
                 authority: ctx.accounts.vault_authority.to_account_info(),
             },
@@ -180,14 +176,61 @@ pub mod locker {
         );
         token::transfer(cpi_ctx, amount_to_transfer)?;
 
-        ctx.accounts.vault.reload()?;
-        let amount_after = ctx.accounts.vault.amount;
+        vault.reload()?;
+        let amount_after = vault.amount;
         require!(
             amount_before - amount_after == amount_to_transfer,
             InvalidAmountTransferred
         );
 
-        locker.withdrawn_amount += amount_to_transfer;
+        Ok(())
+    }
+
+    pub fn split_locker(ctx: Context<SplitLocker>, args: SplitLockerArgs) -> Result<()> {
+        require!(args.amount > 0, InvalidAmount);
+
+        let new_locker = &mut ctx.accounts.new_locker;
+        let old_locker = &mut ctx.accounts.old_locker;
+        let old_vault = &mut ctx.accounts.old_vault;
+
+        require!(args.amount <= old_vault.amount, InvalidAmount);
+
+        let amount_before = old_vault.amount;
+
+        let locker_key = old_locker.key();
+        let seeds = &[locker_key.as_ref(), &[old_locker.vault_bump]];
+        let signer = &[&seeds[..]];
+
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: old_vault.to_account_info(),
+                to: ctx.accounts.new_vault.to_account_info(),
+                authority: ctx.accounts.old_vault_authority.to_account_info(),
+            },
+            signer,
+        );
+        token::transfer(cpi_ctx, args.amount)?;
+
+        old_vault.reload()?;
+        let amount_after = old_vault.amount;
+        require!(
+            amount_before - amount_after == args.amount,
+            InvalidAmountTransferred
+        );
+
+        new_locker.owner = ctx.accounts.new_owner.key();
+        new_locker.country_code = old_locker.country_code;
+        new_locker.current_unlock_date = old_locker.current_unlock_date;
+        new_locker.start_emission = old_locker.start_emission;
+
+        new_locker.original_unlock_date = old_locker.current_unlock_date;
+        new_locker.creator = ctx.accounts.old_owner.key();
+        new_locker.bump = args.locker_bump;
+
+        new_locker.deposited_amount = args.amount;
+        new_locker.vault = ctx.accounts.new_vault.key();
+        new_locker.vault_bump = args.vault_bump;
 
         Ok(())
     }
@@ -200,7 +243,6 @@ pub struct Locker {
     current_unlock_date: i64,
     start_emission: Option<i64>,
     deposited_amount: u64,
-    withdrawn_amount: u64,
     vault: Pubkey,
     vault_bump: u8,
     // `creator` and `original_unlock_date` help to generate PDA
@@ -217,7 +259,6 @@ impl Default for Locker {
             current_unlock_date: Default::default(),
             start_emission: Default::default(),
             deposited_amount: Default::default(),
-            withdrawn_amount: Default::default(),
             original_unlock_date: Default::default(),
             vault: Default::default(),
             vault_bump: Default::default(),
@@ -282,14 +323,7 @@ pub struct CreateLocker<'info> {
 
 #[derive(Accounts)]
 pub struct Relock<'info> {
-    #[account(
-        mut,
-        seeds = [
-            locker.creator.key().as_ref(),
-            locker.original_unlock_date.to_be_bytes().as_ref(),
-        ],
-        bump = locker.bump
-    )]
+    #[account(mut)]
     locker: ProgramAccount<'info, Locker>,
     #[account(
         signer,
@@ -300,14 +334,7 @@ pub struct Relock<'info> {
 
 #[derive(Accounts)]
 pub struct TransferOwnership<'info> {
-    #[account(
-        mut,
-        seeds = [
-            locker.creator.key().as_ref(),
-            locker.original_unlock_date.to_be_bytes().as_ref(),
-        ],
-        bump = locker.bump
-    )]
+    #[account(mut)]
     locker: ProgramAccount<'info, Locker>,
     #[account(
         signer,
@@ -319,14 +346,6 @@ pub struct TransferOwnership<'info> {
 
 #[derive(Accounts)]
 pub struct WithdrawFunds<'info> {
-    #[account(
-        mut,
-        seeds = [
-            locker.creator.key().as_ref(),
-            locker.original_unlock_date.to_be_bytes().as_ref(),
-        ],
-        bump = locker.bump
-    )]
     locker: ProgramAccount<'info, Locker>,
     #[account(
         signer,
@@ -347,6 +366,58 @@ pub struct WithdrawFunds<'info> {
 
     clock: Sysvar<'info, Clock>,
     token_program: Program<'info, Token>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct SplitLockerArgs {
+    locker_bump: u8,
+    vault_bump: u8,
+    amount: u64,
+}
+
+#[derive(Accounts)]
+#[instruction(args: SplitLockerArgs)]
+pub struct SplitLocker<'info> {
+    #[account(mut)]
+    old_locker: ProgramAccount<'info, Locker>,
+    #[account(
+        signer,
+        constraint = old_locker.owner == old_owner.key()
+    )]
+    old_owner: AccountInfo<'info>,
+    old_vault_authority: AccountInfo<'info>,
+    #[account(
+        mut,
+        constraint = old_vault.owner == old_vault_authority.key()
+    )]
+    old_vault: Account<'info, TokenAccount>,
+
+    #[account(
+        init,
+        payer = old_owner,
+        seeds = [
+            old_owner.key().as_ref(),
+            old_locker.current_unlock_date.to_be_bytes().as_ref(),
+        ],
+        bump = args.locker_bump,
+    )]
+    new_locker: ProgramAccount<'info, Locker>,
+    new_owner: AccountInfo<'info>,
+    #[account(
+        seeds = [
+            new_locker.key().as_ref()
+        ],
+        bump = args.vault_bump
+    )]
+    new_vault_authority: AccountInfo<'info>,
+    #[account(
+        mut,
+        constraint = new_vault.mint == old_vault.mint
+    )]
+    new_vault: Account<'info, TokenAccount>,
+
+    token_program: Program<'info, Token>,
+    system_program: Program<'info, System>,
 }
 
 /// floor(a * b / denominator)
