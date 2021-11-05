@@ -14,6 +14,7 @@ describe('locker', () => {
   const creator = provider.wallet.publicKey;
   const unlockDate = new anchor.BN(Date.now() / 1000 + 4);
   const newOwner = anchor.web3.Keypair.generate();
+
   let
     mint: spl.Token,
     fundingWallet: anchor.web3.PublicKey;

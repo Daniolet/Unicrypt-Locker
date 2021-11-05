@@ -36,6 +36,50 @@ async function createTokenAccount(provider, mint, owner) {
   return vault;
 }
 
+const FAILED_TO_FIND_ACCOUNT = 'Failed to find token account';
+const INVALID_ACCOUNT_OWNER = 'Invalid account owner';
+
+async function getOrCreateAssociatedTokenAccount(provider, mint, owner) {
+  let associatedTokenAddress = await anchor.utils.token.associatedAddress({ mint, owner });
+
+  try {
+    return [associatedTokenAddress, await getTokenAccount(provider, associatedTokenAddress)];
+  } catch (err) {
+    // INVALID_ACCOUNT_OWNER can be possible if the associatedAddress has
+    // already been received some lamports (= became system accounts).
+    // Assuming program derived addressing is safe, this is the only case
+    // for the INVALID_ACCOUNT_OWNER in this code-path
+    if (
+      err.message === FAILED_TO_FIND_ACCOUNT ||
+      err.message === INVALID_ACCOUNT_OWNER
+    ) {
+      // as this isn't atomic, it's possible others can create associated
+      // accounts meanwhile
+      try {
+        let createTokenAccountInstr = spl.Token.createAssociatedTokenAccountInstruction(
+          spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+          TOKEN_PROGRAM_ID,
+          mint,
+          associatedTokenAddress,
+          owner,
+          provider.wallet.publicKey,
+        );
+        let createTokenAccountTx = new anchor.web3.Transaction().add(createTokenAccountInstr);
+        await provider.send(createTokenAccountTx);
+      } catch (err) {
+        // ignore all errors; for now there is no API compatible way to
+        // selectively ignore the expected instruction error if the
+        // associated account is existing already.
+      }
+
+      // Now this should always succeed
+      return [associatedTokenAddress, await getTokenAccount(provider, associatedTokenAddress)];
+    } else {
+      throw err;
+    }
+  }
+}
+
 async function getTokenAccount(provider, addr) {
   return await serumCmn.getTokenAccount(provider, addr);
 }
@@ -45,9 +89,10 @@ function sleep(ms) {
 }
 
 module.exports = {
-    createMint,
-    createTokenAccount,
-    getTokenAccount,
-    sleep,
-    TOKEN_PROGRAM_ID,
+  createMint,
+  createTokenAccount,
+  getTokenAccount,
+  getOrCreateAssociatedTokenAccount,
+  sleep,
+  TOKEN_PROGRAM_ID,
 };

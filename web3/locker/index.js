@@ -6,7 +6,6 @@ const utils = require('./utils');
 
 const lockerIdl = require('./locker.json');
 const lockerIdlDevnet = require('./locker.devnet.json');
-const { splitArgsAndCtx } = require('@project-serum/anchor');
 
 const programIdLocalnet = new solana_web3.PublicKey(lockerIdl.metadata.address);
 const programIdDevnet = new solana_web3.PublicKey(lockerIdlDevnet.metadata.address);
@@ -32,29 +31,24 @@ async function createLocker(provider, args, cluster) {
 
   const [locker, lockerBump] = await anchor.web3.PublicKey.findProgramAddress(
     [
-      args.creator.toBuffer(),
-      args.unlockDate.toBuffer('be', 8),
+      args.creator.toBytes(),
+      args.unlockDate.toArray('be', 8),
     ],
     program.programId
   );
 
   const [vaultAuthority, vaultBump] = await anchor.web3.PublicKey.findProgramAddress(
     [
-      locker.toBuffer()
+      locker.toBytes()
     ],
     program.programId,
   );
 
   const fundingWalletAccount = await utils.getTokenAccount(provider, args.fundingWallet);
-  const mint = new spl.Token(
-    provider.connection,
-    fundingWalletAccount.mint,
-    utils.TOKEN_PROGRAM_ID,
-    provider.wallet.payer
+  const vault = await utils.createTokenAccount(provider, fundingWalletAccount.mint, vaultAuthority);
+  const [feeTokenWallet, feeTokenAccount] = await utils.getOrCreateAssociatedTokenAccount(
+    provider, fundingWalletAccount.mint, feeWallet
   );
-
-  const vault = await utils.createTokenAccount(provider, mint.publicKey, vaultAuthority);
-  const feeTokenWallet = await mint.getOrCreateAssociatedAccountInfo(feeWallet);
 
   await program.rpc.createLocker(
     {
@@ -74,7 +68,7 @@ async function createLocker(provider, args, cluster) {
         vaultAuthority,
         fundingWalletAuthority: args.fundingWalletAuthority,
         fundingWallet: args.fundingWallet,
-        feeWallet: feeTokenWallet.address,
+        feeWallet: feeTokenWallet,
 
         clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
         systemProgram: anchor.web3.SystemProgram.programId,
@@ -142,7 +136,7 @@ async function withdrawFunds(provider, args, cluster) {
 
   const vaultAuthority = await anchor.web3.PublicKey.createProgramAddress(
     [
-      args.locker.publicKey.toBuffer(),
+      args.locker.publicKey.toBytes(),
       [args.locker.account.vaultBump]
     ],
     program.programId,
@@ -170,7 +164,7 @@ async function splitLocker(provider, args, cluster) {
 
   const oldVaultAuthority = await anchor.web3.PublicKey.createProgramAddress(
     [
-      args.locker.publicKey.toBuffer(),
+      args.locker.publicKey.toBytes(),
       [args.locker.account.vaultBump]
     ],
     program.programId,
@@ -178,28 +172,21 @@ async function splitLocker(provider, args, cluster) {
 
   const [newLocker, newLockerBump] = await anchor.web3.PublicKey.findProgramAddress(
     [
-      args.locker.account.owner.toBuffer(),
-      args.locker.account.currentUnlockDate.toBuffer('be', 8),
+      args.locker.account.owner.toBytes(),
+      args.locker.account.currentUnlockDate.toArray('be', 8),
     ],
     program.programId
   );
 
   const [newVaultAuthority, newVaultBump] = await anchor.web3.PublicKey.findProgramAddress(
     [
-      newLocker.toBuffer(),
+      newLocker.toBytes(),
     ],
     program.programId,
   );
 
   const vaultAccount = await utils.getTokenAccount(provider, args.locker.account.vault);
-  const mint = new spl.Token(
-    provider.connection,
-    vaultAccount.mint,
-    utils.TOKEN_PROGRAM_ID,
-    provider.wallet.payer
-  );
-
-  const newVault = await utils.createTokenAccount(provider, mint.publicKey, newVaultAuthority);
+  const newVault = await utils.createTokenAccount(provider, vaultAccount.mint, newVaultAuthority);
 
   await program.rpc.splitLocker(
     {
