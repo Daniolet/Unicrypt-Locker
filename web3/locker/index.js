@@ -1,6 +1,6 @@
 const solana_web3 = require('@solana/web3.js');
-const spl = require('@solana/spl-token');
 const anchor = require('@project-serum/anchor');
+const serumCmn = require('@project-serum/common');
 
 const utils = require('./utils');
 
@@ -44,8 +44,8 @@ async function createLocker(provider, args, cluster) {
     program.programId,
   );
 
-  const fundingWalletAccount = await utils.getTokenAccount(provider, args.fundingWallet);
-  const vault = await utils.createTokenAccount(provider, fundingWalletAccount.mint, vaultAuthority);
+  const fundingWalletAccount = await serumCmn.getTokenAccount(provider, args.fundingWallet);
+  const vault = await serumCmn.createTokenAccount(provider, fundingWalletAccount.mint, vaultAuthority);
   const [feeTokenWallet, feeTokenAccount] = await utils.getOrCreateAssociatedTokenAccount(
     provider, fundingWalletAccount.mint, feeWallet
   );
@@ -185,8 +185,8 @@ async function splitLocker(provider, args, cluster) {
     program.programId,
   );
 
-  const vaultAccount = await utils.getTokenAccount(provider, args.locker.account.vault);
-  const newVault = await utils.createTokenAccount(provider, vaultAccount.mint, newVaultAuthority);
+  const vaultAccount = await serumCmn.getTokenAccount(provider, args.locker.account.vault);
+  const newVault = await serumCmn.createTokenAccount(provider, vaultAccount.mint, newVaultAuthority);
 
   await program.rpc.splitLocker(
     {

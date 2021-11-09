@@ -1,10 +1,26 @@
 import * as anchor from '@project-serum/anchor';
 import * as spl from "@solana/spl-token";
+import * as serumCmn from "@project-serum/common";
 import { Locker } from '../target/types/locker';
 
 import lockerClient from "../web3/locker/index";
 
 import * as assert from 'assert';
+
+async function createMint(provider: anchor.Provider, authority?: anchor.web3.PublicKey) {
+  if (authority === undefined) {
+    authority = provider.wallet.publicKey;
+  }
+  const mint = await spl.Token.createMint(
+    provider.connection,
+    provider.wallet.payer,
+    authority,
+    null,
+    6,
+    lockerClient.utils.TOKEN_PROGRAM_ID,
+  );
+  return mint;
+}
 
 describe('locker', () => {
   const provider = anchor.Provider.env();
@@ -20,8 +36,12 @@ describe('locker', () => {
     fundingWallet: anchor.web3.PublicKey;
 
   it('Creates locker', async () => {
-    mint = await lockerClient.utils.createMint(provider);
-    fundingWallet = await lockerClient.utils.createTokenAccount(provider, mint.publicKey);
+    mint = await createMint(provider);
+    fundingWallet = await serumCmn.createTokenAccount(
+      provider,
+      mint.publicKey,
+      provider.wallet.publicKey,
+    );
 
     await mint.mintTo(fundingWallet, provider.wallet.publicKey, [], 10000);
 
@@ -51,14 +71,14 @@ describe('locker', () => {
     assert.ok(lockerAccount.account.currentUnlockDate.eq(unlockDate));
     assert.ok(lockerAccount.account.originalUnlockDate.eq(unlockDate));
 
-    const fundingWalletAccount = await lockerClient.utils.getTokenAccount(provider, fundingWallet);
+    const fundingWalletAccount = await serumCmn.getTokenAccount(provider, fundingWallet);
     assert.ok(fundingWalletAccount.amount.eqn(0));
 
     const feeWallet = await mint.getOrCreateAssociatedAccountInfo(lockerClient.feeWallet);
-    const feeWalletAccount = await lockerClient.utils.getTokenAccount(provider, feeWallet.address);
+    const feeWalletAccount = await serumCmn.getTokenAccount(provider, feeWallet.address);
     assert.ok(feeWalletAccount.amount.eqn(35));
 
-    const vaultAccount = await lockerClient.utils.getTokenAccount(provider, lockerAccount.account.vault);
+    const vaultAccount = await serumCmn.getTokenAccount(provider, lockerAccount.account.vault);
     assert.ok(vaultAccount.amount.eqn(9965));
   });
 
@@ -152,7 +172,7 @@ describe('locker', () => {
 
     assert.ok(newLocker.account.depositedAmount.eq(amount));
 
-    const oldVaultAccount = await lockerClient.utils.getTokenAccount(provider, locker.account.vault);
+    const oldVaultAccount = await serumCmn.getTokenAccount(provider, locker.account.vault);
     assert.ok(oldVaultAccount.amount.eqn(8965));
   });
 
@@ -178,10 +198,10 @@ describe('locker', () => {
       }
     }
 
-    const targetWallet = await lockerClient.utils.getTokenAccount(provider, fundingWallet);
+    const targetWallet = await serumCmn.getTokenAccount(provider, fundingWallet);
     assert.ok(targetWallet.amount.eq(amount));
 
-    const vaultWallet = await lockerClient.utils.getTokenAccount(provider, lockerAccount.account.vault);
+    const vaultWallet = await serumCmn.getTokenAccount(provider, lockerAccount.account.vault);
     // 10000 - 35 (fee) - - 1000 (gone in a split) - 1000 (withdraw amount)
     assert.ok(vaultWallet.amount.eqn(7965));
   });

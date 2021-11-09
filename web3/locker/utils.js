@@ -1,4 +1,5 @@
 const spl = require("@solana/spl-token");
+const web3 = require("@solana/web3.js");
 const anchor = require('@project-serum/anchor');
 const TokenInstructions = require("@project-serum/serum").TokenInstructions;
 const serumCmn = require('@project-serum/common');
@@ -7,33 +8,49 @@ const TOKEN_PROGRAM_ID = new anchor.web3.PublicKey(
   TokenInstructions.TOKEN_PROGRAM_ID.toString()
 );
 
-async function createMint(provider, authority) {
-  if (authority === undefined) {
-    authority = provider.wallet.publicKey;
-  }
-  const mint = await spl.Token.createMint(
-    provider.connection,
-    provider.wallet.payer,
-    authority,
-    null,
-    6,
-    TOKEN_PROGRAM_ID
-  );
-  return mint;
-}
-
 async function createTokenAccount(provider, mint, owner) {
   if (owner === undefined) {
     owner = provider.wallet.publicKey;
   }
-  const token = new spl.Token(
+  // Allocate memory for the account
+  const balanceNeeded = await spl.Token.getMinBalanceRentForExemptAccount(
     provider.connection,
-    mint,
-    TOKEN_PROGRAM_ID,
-    provider.wallet.payer
   );
-  let vault = await token.createAccount(owner);
-  return vault;
+
+  const seed = mint.toString() + owner.toString();
+
+  const tokenAccount = await web3.PublicKey.createWithSeed(
+    provider.wallet.publicKey,
+    seed,
+    TOKEN_PROGRAM_ID
+  );
+  console.log(tokenAccount);
+
+  const tx = new web3.Transaction();
+  tx.add(
+    web3.SystemProgram.createAccountWithSeed({
+      fromPubkey: provider.wallet.publicKey,
+      newAccountPubkey: tokenAccount,
+      basePubkey: provider.wallet.publicKey,
+      seed,
+      lamports: balanceNeeded,
+      space: spl.AccountLayout.span,
+      programId: TOKEN_PROGRAM_ID,
+    }),
+  );
+
+  tx.add(
+    spl.Token.createInitAccountInstruction(
+      TOKEN_PROGRAM_ID,
+      mint,
+      tokenAccount,
+      owner,
+    ),
+  );
+
+  await provider.send(tx);
+
+  return tokenAccount;
 }
 
 const FAILED_TO_FIND_ACCOUNT = 'Failed to find token account';
@@ -43,7 +60,7 @@ async function getOrCreateAssociatedTokenAccount(provider, mint, owner) {
   let associatedTokenAddress = await anchor.utils.token.associatedAddress({ mint, owner });
 
   try {
-    return [associatedTokenAddress, await getTokenAccount(provider, associatedTokenAddress)];
+    return [associatedTokenAddress, await serumCmn.getTokenAccount(provider, associatedTokenAddress)];
   } catch (err) {
     // INVALID_ACCOUNT_OWNER can be possible if the associatedAddress has
     // already been received some lamports (= became system accounts).
@@ -73,15 +90,11 @@ async function getOrCreateAssociatedTokenAccount(provider, mint, owner) {
       }
 
       // Now this should always succeed
-      return [associatedTokenAddress, await getTokenAccount(provider, associatedTokenAddress)];
+      return [associatedTokenAddress, await serumCmn.getTokenAccount(provider, associatedTokenAddress)];
     } else {
       throw err;
     }
   }
-}
-
-async function getTokenAccount(provider, addr) {
-  return await serumCmn.getTokenAccount(provider, addr);
 }
 
 function sleep(ms) {
@@ -89,9 +102,7 @@ function sleep(ms) {
 }
 
 module.exports = {
-  createMint,
   createTokenAccount,
-  getTokenAccount,
   getOrCreateAssociatedTokenAccount,
   sleep,
   TOKEN_PROGRAM_ID,
