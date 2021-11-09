@@ -76,6 +76,8 @@ async function createLocker(provider, args, cluster) {
       }
     }
   );
+
+  return locker;
 }
 
 async function getLockers(provider, cluster) {
