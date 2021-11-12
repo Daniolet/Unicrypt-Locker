@@ -45,8 +45,14 @@ async function createLocker(provider, args, cluster) {
   );
 
   const fundingWalletAccount = await serumCmn.getTokenAccount(provider, args.fundingWallet);
-  const vault = await serumCmn.createTokenAccount(provider, fundingWalletAccount.mint, vaultAuthority);
-  const [feeTokenWallet, feeTokenAccount] = await utils.getOrCreateAssociatedTokenAccount(
+  const vault = new anchor.web3.Account();
+  const createTokenAccountInstrs = await serumCmn.createTokenAccountInstrs(
+    provider,
+    vault.publicKey,
+    fundingWalletAccount.mint,
+    vaultAuthority
+  );
+  const [feeTokenWallet, createAssociatedTokenAccountInstrs] = await utils.getOrCreateAssociatedTokenAccountInstrs(
     provider, fundingWalletAccount.mint, feeWallet
   );
 
@@ -64,7 +70,7 @@ async function createLocker(provider, args, cluster) {
         locker,
         creator: args.creator,
         owner: args.owner,
-        vault,
+        vault: vault.publicKey,
         vaultAuthority,
         fundingWalletAuthority: args.fundingWalletAuthority,
         fundingWallet: args.fundingWallet,
@@ -73,7 +79,10 @@ async function createLocker(provider, args, cluster) {
         clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
         systemProgram: anchor.web3.SystemProgram.programId,
         tokenProgram: utils.TOKEN_PROGRAM_ID,
-      }
+      },
+      instructions: createTokenAccountInstrs
+        .concat(createAssociatedTokenAccountInstrs),
+      signers: [vault],
     }
   );
 
@@ -188,7 +197,13 @@ async function splitLocker(provider, args, cluster) {
   );
 
   const vaultAccount = await serumCmn.getTokenAccount(provider, args.locker.account.vault);
-  const newVault = await serumCmn.createTokenAccount(provider, vaultAccount.mint, newVaultAuthority);
+  const newVault = new anchor.web3.Account();
+  const createTokenAccountInstrs = await serumCmn.createTokenAccountInstrs(
+    provider,
+    newVault.publicKey,
+    vaultAccount.mint,
+    newVaultAuthority
+  );
 
   await program.rpc.splitLocker(
     {
@@ -206,11 +221,13 @@ async function splitLocker(provider, args, cluster) {
         newLocker,
         newOwner: args.newOwner,
         newVaultAuthority,
-        newVault,
+        newVault: newVault.publicKey,
 
         systemProgram: anchor.web3.SystemProgram.programId,
         tokenProgram: utils.TOKEN_PROGRAM_ID,
-      }
+      },
+      instructions: createTokenAccountInstrs,
+      signers: [newVault],
     }
   );
 }

@@ -56,11 +56,12 @@ async function createTokenAccount(provider, mint, owner) {
 const FAILED_TO_FIND_ACCOUNT = 'Failed to find token account';
 const INVALID_ACCOUNT_OWNER = 'Invalid account owner';
 
-async function getOrCreateAssociatedTokenAccount(provider, mint, owner) {
+async function getOrCreateAssociatedTokenAccountInstrs(provider, mint, owner) {
   let associatedTokenAddress = await anchor.utils.token.associatedAddress({ mint, owner });
 
   try {
-    return [associatedTokenAddress, await serumCmn.getTokenAccount(provider, associatedTokenAddress)];
+    const _ = await serumCmn.getTokenAccount(provider, associatedTokenAddress);
+    return [associatedTokenAddress, []];
   } catch (err) {
     // INVALID_ACCOUNT_OWNER can be possible if the associatedAddress has
     // already been received some lamports (= became system accounts).
@@ -70,27 +71,15 @@ async function getOrCreateAssociatedTokenAccount(provider, mint, owner) {
       err.message === FAILED_TO_FIND_ACCOUNT ||
       err.message === INVALID_ACCOUNT_OWNER
     ) {
-      // as this isn't atomic, it's possible others can create associated
-      // accounts meanwhile
-      try {
-        let createTokenAccountInstr = spl.Token.createAssociatedTokenAccountInstruction(
-          spl.ASSOCIATED_TOKEN_PROGRAM_ID,
-          TOKEN_PROGRAM_ID,
-          mint,
-          associatedTokenAddress,
-          owner,
-          provider.wallet.publicKey,
-        );
-        let createTokenAccountTx = new anchor.web3.Transaction().add(createTokenAccountInstr);
-        await provider.send(createTokenAccountTx);
-      } catch (err) {
-        // ignore all errors; for now there is no API compatible way to
-        // selectively ignore the expected instruction error if the
-        // associated account is existing already.
-      }
-
-      // Now this should always succeed
-      return [associatedTokenAddress, await serumCmn.getTokenAccount(provider, associatedTokenAddress)];
+      let createTokenAccountInstr = spl.Token.createAssociatedTokenAccountInstruction(
+        spl.ASSOCIATED_TOKEN_PROGRAM_ID,
+        TOKEN_PROGRAM_ID,
+        mint,
+        associatedTokenAddress,
+        owner,
+        provider.wallet.publicKey,
+      );
+      return [associatedTokenAddress, [createTokenAccountInstr]];
     } else {
       throw err;
     }
@@ -103,7 +92,7 @@ function sleep(ms) {
 
 module.exports = {
   createTokenAccount,
-  getOrCreateAssociatedTokenAccount,
+  getOrCreateAssociatedTokenAccountInstrs,
   sleep,
   TOKEN_PROGRAM_ID,
 };
