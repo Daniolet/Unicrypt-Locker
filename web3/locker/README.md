@@ -95,6 +95,7 @@ await lockerClient.createLocker(provider, {
     // Locker account as returned from `getLockers`
     locker,
     // Public key of a wallet to transfer tokens to
+    // Should be an SPL token account!
     targetWallet,
 }
 ```
