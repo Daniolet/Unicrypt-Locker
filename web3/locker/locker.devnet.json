@@ -3,6 +3,37 @@
   "name": "locker",
   "instructions": [
     {
+      "name": "initMintInfo",
+      "accounts": [
+        {
+          "name": "payer",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "mintInfo",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "mint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "bump",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "createLocker",
       "accounts": [
         {
@@ -42,6 +73,11 @@
         },
         {
           "name": "feeWallet",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "mintInfo",
           "isMut": true,
           "isSigner": false
         },
@@ -308,6 +344,22 @@
           }
         ]
       }
+    },
+    {
+      "name": "MintInfo",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "feePaid",
+            "type": "bool"
+          }
+        ]
+      }
     }
   ],
   "types": [
@@ -341,6 +393,10 @@
           {
             "name": "vaultBump",
             "type": "u8"
+          },
+          {
+            "name": "feeInSol",
+            "type": "bool"
           }
         ]
       }

@@ -14,6 +14,7 @@ await lockerClient.createLocker(provider, {
       owner: creator,
       fundingWalletAuthority: creator,
       fundingWallet,
+      feeInSol: true,
     });
 ```
 
@@ -42,6 +43,9 @@ await lockerClient.createLocker(provider, {
     fundingWalletAuthority,
     // address of source SPL token account
     fundingWallet,
+    // boolean: if true then fee is paid in SOL,
+    // else paid in locked token
+    feeInSol,
 }
 ```
 

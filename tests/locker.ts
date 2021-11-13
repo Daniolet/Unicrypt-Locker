@@ -6,6 +6,7 @@ import { Locker } from '../target/types/locker';
 import lockerClient from "../web3/locker/index";
 
 import * as assert from 'assert';
+import { TRANSFER_OWNER_INDEX } from '@project-serum/serum/lib/token-instructions';
 
 async function createMint(provider: anchor.Provider, authority?: anchor.web3.PublicKey) {
   if (authority === undefined) {
@@ -55,6 +56,7 @@ describe('locker', () => {
         owner: creator,
         fundingWalletAuthority: creator,
         fundingWallet,
+        feeInSol: true,
       },
       lockerClient.LOCALNET
     );
@@ -73,6 +75,10 @@ describe('locker', () => {
 
     const fundingWalletAccount = await serumCmn.getTokenAccount(provider, fundingWallet);
     assert.ok(fundingWalletAccount.amount.eqn(0));
+
+    const [mintInfoAddress, _mintInfoBump] = await lockerClient.findMintInfoAddress(program, mint.publicKey);
+    const mintInfoAccount = await program.account.mintInfo.fetch(mintInfoAddress);
+    assert.ok(mintInfoAccount.feePaid);
 
     const vaultAccount = await serumCmn.getTokenAccount(provider, lockerAccount.account.vault);
     assert.ok(vaultAccount.amount.eqn(10000));

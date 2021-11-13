@@ -1,5 +1,8 @@
 use anchor_lang::{prelude::*, solana_program, AccountsClose};
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_spl::{
+    associated_token::get_associated_token_address,
+    token::{self, Mint, Token, TokenAccount, Transfer},
+};
 
 use az::CheckedAs;
 
@@ -10,7 +13,8 @@ mod fee {
 
     declare_id!("7vPbNKWdgS1dqx6ZnJR8dU9Mo6Tsgwp3S5rALuANwXiJ");
 
-    pub const FEE: u64 = 1 * solana_program::native_token::LAMPORTS_PER_SOL;
+    pub const FEE_SOL: u64 = 1 * solana_program::native_token::LAMPORTS_PER_SOL;
+    pub const FEE_PERMILLE: u64 = 35;
 }
 
 #[error]
@@ -33,8 +37,18 @@ pub enum ErrorCode {
 pub mod locker {
     use super::*;
 
+    pub fn init_mint_info(ctx: Context<InitMintInfo>, bump: u8) -> Result<()> {
+        let mint_info = &mut ctx.accounts.mint_info;
+
+        mint_info.bump = bump;
+        mint_info.fee_paid = false;
+
+        Ok(())
+    }
+
     pub fn create_locker(ctx: Context<CreateLocker>, args: CreateLockerArgs) -> Result<()> {
         let locker = &mut ctx.accounts.locker;
+        let mint_info = &mut ctx.accounts.mint_info;
 
         let now = ctx.accounts.clock.unix_timestamp;
         require!(args.unlock_date > now, UnlockInThePast);
@@ -59,25 +73,63 @@ pub mod locker {
         locker.vault = ctx.accounts.vault.key();
         locker.vault_bump = args.vault_bump;
 
-        require!(ctx.accounts.fee_wallet.key() == fee::ID, InvalidFeeWallet);
+        let (amount_before, amount_to_lock) = if args.fee_in_sol {
+            require!(ctx.accounts.fee_wallet.key() == fee::ID, InvalidFeeWallet);
 
-        solana_program::program::invoke(
-            &solana_program::system_instruction::transfer(
-                ctx.accounts.owner.to_account_info().key,
-                ctx.accounts.fee_wallet.key,
-                fee::FEE,
-            ),
-            &[
-                ctx.accounts.owner.to_account_info(),
-                ctx.accounts.fee_wallet.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
-        )?;
+            if !mint_info.fee_paid {
+                solana_program::program::invoke(
+                    &solana_program::system_instruction::transfer(
+                        ctx.accounts.owner.to_account_info().key,
+                        ctx.accounts.fee_wallet.key,
+                        fee::FEE_SOL,
+                    ),
+                    &[
+                        ctx.accounts.owner.to_account_info(),
+                        ctx.accounts.fee_wallet.to_account_info(),
+                        ctx.accounts.system_program.to_account_info(),
+                    ],
+                )?;
+                mint_info.fee_paid = true;
+            }
 
-        require!(args.amount > 0, NothingToLock);
+            (ctx.accounts.funding_wallet.amount, args.amount)
+        } else {
+            let associated_token_account =
+                get_associated_token_address(&fee::ID, &ctx.accounts.funding_wallet.mint);
 
-        let amount_before = ctx.accounts.funding_wallet.amount;
-        locker.deposited_amount = args.amount;
+            require!(
+                associated_token_account == ctx.accounts.fee_wallet.key(),
+                InvalidFeeWallet
+            );
+
+            let amount_before = ctx.accounts.funding_wallet.amount;
+
+            let lock_fee =
+                mul_div(args.amount, fee::FEE_PERMILLE, 10000).ok_or(ErrorCode::IntegerOverflow)?;
+
+            let cpi_ctx = CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.funding_wallet.to_account_info(),
+                    to: ctx.accounts.fee_wallet.to_account_info(),
+                    authority: ctx.accounts.funding_wallet_authority.to_account_info(),
+                },
+            );
+            token::transfer(cpi_ctx, lock_fee)?;
+
+            ctx.accounts.funding_wallet.reload()?;
+            let amount_after_fee = ctx.accounts.funding_wallet.amount;
+            require!(
+                amount_before - amount_after_fee == lock_fee,
+                InvalidAmountTransferred
+            );
+
+            (amount_after_fee, args.amount - lock_fee)
+        };
+
+        require!(amount_to_lock > 0, NothingToLock);
+
+        locker.deposited_amount = amount_to_lock;
 
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -87,12 +139,12 @@ pub mod locker {
                 authority: ctx.accounts.funding_wallet_authority.to_account_info(),
             },
         );
-        token::transfer(cpi_ctx, args.amount)?;
+        token::transfer(cpi_ctx, amount_to_lock)?;
 
         ctx.accounts.funding_wallet.reload()?;
         let amount_final = ctx.accounts.funding_wallet.amount;
         require!(
-            amount_before - amount_final == args.amount,
+            amount_before - amount_final == amount_to_lock,
             InvalidAmountTransferred
         );
 
@@ -292,6 +344,40 @@ impl Default for Locker {
     }
 }
 
+#[account]
+pub struct MintInfo {
+    bump: u8,
+    fee_paid: bool,
+}
+
+impl Default for MintInfo {
+    fn default() -> Self {
+        Self {
+            bump: Default::default(),
+            fee_paid: Default::default(),
+        }
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(bump: u8)]
+pub struct InitMintInfo<'info> {
+    #[account(signer)]
+    payer: AccountInfo<'info>,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [
+            mint.key().as_ref(),
+        ],
+        bump = bump
+    )]
+    mint_info: ProgramAccount<'info, MintInfo>,
+    mint: Account<'info, Mint>,
+
+    system_program: Program<'info, System>,
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct CreateLockerArgs {
     amount: u64,
@@ -300,6 +386,7 @@ pub struct CreateLockerArgs {
     start_emission: Option<i64>,
     locker_bump: u8,
     vault_bump: u8,
+    fee_in_sol: bool,
 }
 
 #[derive(Accounts)]
@@ -336,6 +423,14 @@ pub struct CreateLocker<'info> {
     vault: Account<'info, TokenAccount>,
     #[account(mut)]
     fee_wallet: AccountInfo<'info>,
+    #[account(
+        mut,
+        seeds = [
+            vault.mint.key().as_ref()
+        ],
+        bump = mint_info.bump
+    )]
+    mint_info: ProgramAccount<'info, MintInfo>,
 
     clock: Sysvar<'info, Clock>,
     system_program: Program<'info, System>,

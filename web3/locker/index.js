@@ -26,6 +26,45 @@ function initProgram(cluster, provider) {
   }
 }
 
+async function findMintInfoAddress(program, mint) {
+  const [mintInfo, bump] = await anchor.web3.PublicKey.findProgramAddress(
+    [
+      mint.toBytes()
+    ],
+    program.programId
+  );
+  return [mintInfo, bump];
+}
+
+const FAILED_TO_FIND_ACCOUNT = "Account does not exist";
+
+async function getOrCreateMintInfo(program, mint, payer) {
+  const [mintInfo, bump] = await findMintInfoAddress(program, mint);
+
+  try {
+    await program.account.mintInfo.fetch(mintInfo);
+    return [mintInfo, []];
+  } catch (err) {
+    const errMessage = `${FAILED_TO_FIND_ACCOUNT} ${mintInfo.toString()}`;
+    if (err.message === errMessage) {
+      let initMintInfoInstr = program.instruction.initMintInfo(
+        bump,
+        {
+          accounts: {
+            payer,
+            mintInfo,
+            mint,
+            systemProgram: anchor.web3.SystemProgram.programId,
+          }
+        }
+      );
+      return [mintInfo, [initMintInfoInstr]];
+    } else {
+      throw err;
+    }
+  }
+}
+
 async function createLocker(provider, args, cluster) {
   const program = initProgram(cluster, provider);
 
@@ -53,6 +92,17 @@ async function createLocker(provider, args, cluster) {
     vaultAuthority
   );
 
+  const [mintInfo, initMintInfoInstrs] = await getOrCreateMintInfo(
+    program,
+    fundingWalletAccount.mint,
+    args.creator
+  );
+  const [feeTokenWallet, createAssociatedTokenAccountInstrs] = await utils.getOrCreateAssociatedTokenAccountInstrs(
+    provider, fundingWalletAccount.mint, feeWallet
+  );
+
+  const finalFeeWallet = args.feeInSol ? feeWallet : feeTokenWallet;
+
   await program.rpc.createLocker(
     {
       unlockDate: args.unlockDate,
@@ -61,6 +111,7 @@ async function createLocker(provider, args, cluster) {
       countryCode: args.countryCode,
       startEmission: args.startEmission,
       amount: args.amount,
+      feeInSol: args.feeInSol,
     },
     {
       accounts: {
@@ -71,13 +122,16 @@ async function createLocker(provider, args, cluster) {
         vaultAuthority,
         fundingWalletAuthority: args.fundingWalletAuthority,
         fundingWallet: args.fundingWallet,
-        feeWallet,
+        feeWallet: finalFeeWallet,
+        mintInfo,
 
         clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
         systemProgram: anchor.web3.SystemProgram.programId,
         tokenProgram: utils.TOKEN_PROGRAM_ID,
       },
-      instructions: createTokenAccountInstrs,
+      instructions: createTokenAccountInstrs
+        .concat(initMintInfoInstrs)
+        .concat(createAssociatedTokenAccountInstrs),
       signers: [vault],
     }
   );
@@ -257,6 +311,7 @@ async function splitLocker(provider, args, cluster) {
 module.exports = {
   LOCALNET,
   DEVNET,
+  findMintInfoAddress,
   createLocker,
   getLockers,
   getLockersOwnedBy,
