@@ -170,6 +170,32 @@ async function withdrawFunds(provider, args, cluster) {
   );
 }
 
+async function closeLocker(provider, args, cluster) {
+  const program = initProgram(cluster, provider);
+
+  const vaultAuthority = await anchor.web3.PublicKey.createProgramAddress(
+    [
+      args.locker.publicKey.toBytes(),
+      [args.locker.account.vaultBump]
+    ],
+    program.programId,
+  );
+
+  await program.rpc.withdrawFunds(
+    {
+      accounts: {
+        locker: args.locker.publicKey,
+        owner: args.locker.account.owner,
+        vaultAuthority,
+        vault: args.locker.account.vault,
+        targetWallet: args.targetWallet,
+
+        tokenProgram: utils.TOKEN_PROGRAM_ID,
+      }
+    }
+  );
+}
+
 async function splitLocker(provider, args, cluster) {
   const program = initProgram(cluster, provider);
 
@@ -241,6 +267,7 @@ module.exports = {
   relock,
   transferOwnership,
   withdrawFunds,
+  closeLocker,
   splitLocker,
   feeWallet,
   utils,

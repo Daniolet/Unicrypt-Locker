@@ -193,7 +193,7 @@ describe('locker', () => {
         );
         break;
       } catch (err) {
-        assert.equal(err.code, 307); // ToEarlyToWithdraw
+        assert.equal(err.code, 308); // TooEarlyToWithdraw
         await lockerClient.utils.sleep(1000);
       }
     }

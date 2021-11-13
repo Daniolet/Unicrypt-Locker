@@ -220,6 +220,42 @@
           }
         }
       ]
+    },
+    {
+      "name": "closeLocker",
+      "accounts": [
+        {
+          "name": "locker",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "owner",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "vaultAuthority",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "vault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "targetWallet",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
     }
   ],
   "accounts": [
@@ -338,35 +374,39 @@
     },
     {
       "code": 301,
+      "name": "InvalidTimestamp"
+    },
+    {
+      "code": 302,
       "name": "InvalidFeeWallet",
       "msg": "The given fee wallet is not associated with required fee wallet"
     },
     {
-      "code": 302,
+      "code": 303,
       "name": "IntegerOverflow"
     },
     {
-      "code": 303,
+      "code": 304,
       "name": "NothingToLock"
     },
     {
-      "code": 304,
+      "code": 305,
       "name": "InvalidAmountTransferred"
     },
     {
-      "code": 305,
+      "code": 306,
       "name": "InvalidPeriod"
     },
     {
-      "code": 306,
+      "code": 307,
       "name": "CannotUnlockToEarlierDate"
     },
     {
-      "code": 307,
+      "code": 308,
       "name": "TooEarlyToWithdraw"
     },
     {
-      "code": 308,
+      "code": 309,
       "name": "InvalidAmount"
     }
   ],

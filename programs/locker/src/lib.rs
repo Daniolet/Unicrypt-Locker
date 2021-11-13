@@ -20,6 +20,7 @@ mod fee {
 pub enum ErrorCode {
     #[msg("The given unlock date is in the past")]
     UnlockInThePast,
+    InvalidTimestamp,
     #[msg("The given fee wallet is not associated with required fee wallet")]
     InvalidFeeWallet,
     IntegerOverflow,
@@ -40,6 +41,8 @@ pub mod locker {
 
         let now = ctx.accounts.clock.unix_timestamp;
         require!(args.unlock_date > now, UnlockInThePast);
+        // prevents errors when timestamp entered as milliseconds
+        require!(args.unlock_date < 10000000000, InvalidTimestamp);
 
         locker.original_unlock_date = args.unlock_date;
         locker.current_unlock_date = args.unlock_date;
@@ -244,6 +247,34 @@ pub mod locker {
 
         Ok(())
     }
+
+    pub fn close_locker(ctx: Context<CloseLocker>) -> Result<()> {
+        let locker = &ctx.accounts.locker;
+        let vault = &mut ctx.accounts.vault;
+
+        let locker_key = locker.key();
+        let seeds = &[locker_key.as_ref(), &[locker.vault_bump]];
+        let signer = &[&seeds[..]];
+
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: vault.to_account_info(),
+                to: ctx.accounts.target_wallet.to_account_info(),
+                authority: ctx.accounts.vault_authority.to_account_info(),
+            },
+            signer,
+        );
+        token::transfer(cpi_ctx, vault.amount)?;
+
+        vault.reload()?;
+        require!(vault.amount == 0, InvalidAmountTransferred);
+
+        vault.close(ctx.accounts.owner.to_account_info())?;
+        locker.close(ctx.accounts.owner.to_account_info())?;
+
+        Ok(())
+    }
 }
 
 #[account]
@@ -428,6 +459,29 @@ pub struct SplitLocker<'info> {
 
     token_program: Program<'info, Token>,
     system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct CloseLocker<'info> {
+    locker: ProgramAccount<'info, Locker>,
+    #[account(
+        signer,
+        constraint = locker.owner == owner.key()
+    )]
+    owner: AccountInfo<'info>,
+    vault_authority: AccountInfo<'info>,
+    #[account(
+        mut,
+        constraint = vault.owner == vault_authority.key()
+    )]
+    vault: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        constraint = target_wallet.mint == vault.mint
+    )]
+    target_wallet: Account<'info, TokenAccount>,
+
+    token_program: Program<'info, Token>,
 }
 
 /// floor(a * b / denominator)

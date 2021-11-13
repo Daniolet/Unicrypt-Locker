@@ -24,7 +24,7 @@ await lockerClient.createLocker(provider, {
 
 ```js
 {
-    // unix timestamp of type anchor.BN
+    // unix timestamp (seconds!) of type anchor.BN
     unlockDate,
     // some number
     countryCode,
@@ -115,5 +115,22 @@ await lockerClient.createLocker(provider, {
     locker,
     // Public key of a new owner
     newOwner,
+}
+```
+
+## Close locker (for tests only!)
+
+`closeLocker(provider, args)`
+
+* `provider` -- solana web3 provider
+* `args`:
+
+```js
+{
+    // Locker account as returned from `getLockers`
+    locker,
+    // Public key of a wallet to transfer tokens to
+    // Should be an SPL token account!
+    targetWallet,
 }
 ```
