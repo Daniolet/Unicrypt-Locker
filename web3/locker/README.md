@@ -45,6 +45,8 @@ await lockerClient.createLocker(provider, {
     fundingWallet,
     // boolean: if true then fee is paid in SOL,
     // else paid in locked token
+    // if token is already whitelisted it's better to set this to true
+    // to avoid any fees
     feeInSol,
 }
 ```
@@ -138,3 +140,12 @@ await lockerClient.createLocker(provider, {
     targetWallet,
 }
 ```
+
+## Check if token is already whitelisted
+
+`isMintWhitelisted(provider, mint)`
+
+* `provider` -- as always
+* `mint` -- token public key
+
+Returns simple boolean.

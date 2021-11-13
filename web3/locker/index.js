@@ -36,6 +36,8 @@ async function findMintInfoAddress(program, mint) {
   return [mintInfo, bump];
 }
 
+const FAILED_TO_FIND_ACCOUNT = "Account does not exist";
+
 async function tryIfExists(program, account, address, found, notFound) {
   try {
     const accountInfo = await program.account[account].fetch(address);
@@ -60,8 +62,6 @@ async function isMintWhitelisted(provider, mint, cluster) {
     () => false,
   );
 }
-
-const FAILED_TO_FIND_ACCOUNT = "Account does not exist";
 
 async function getOrCreateMintInfo(program, mint, payer) {
   const [mintInfo, bump] = await findMintInfoAddress(program, mint);
