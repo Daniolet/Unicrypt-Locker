@@ -74,12 +74,8 @@ describe('locker', () => {
     const fundingWalletAccount = await serumCmn.getTokenAccount(provider, fundingWallet);
     assert.ok(fundingWalletAccount.amount.eqn(0));
 
-    const feeWallet = await mint.getOrCreateAssociatedAccountInfo(lockerClient.feeWallet);
-    const feeWalletAccount = await serumCmn.getTokenAccount(provider, feeWallet.address);
-    assert.ok(feeWalletAccount.amount.eqn(35));
-
     const vaultAccount = await serumCmn.getTokenAccount(provider, lockerAccount.account.vault);
-    assert.ok(vaultAccount.amount.eqn(9965));
+    assert.ok(vaultAccount.amount.eqn(10000));
   });
 
   it('Fails to withdraw funds if it is too early', async () => {
@@ -173,7 +169,7 @@ describe('locker', () => {
     assert.ok(newLocker.account.depositedAmount.eq(amount));
 
     const oldVaultAccount = await serumCmn.getTokenAccount(provider, locker.account.vault);
-    assert.ok(oldVaultAccount.amount.eqn(8965));
+    assert.ok(oldVaultAccount.amount.eqn(9000));
   });
 
   it('Withdraws the funds', async () => {
@@ -202,7 +198,7 @@ describe('locker', () => {
     assert.ok(targetWallet.amount.eq(amount));
 
     const vaultWallet = await serumCmn.getTokenAccount(provider, lockerAccount.account.vault);
-    // 10000 - 35 (fee) - - 1000 (gone in a split) - 1000 (withdraw amount)
-    assert.ok(vaultWallet.amount.eqn(7965));
+    // 10000 - 1000 (gone in a split) - 1000 (withdraw amount)
+    assert.ok(vaultWallet.amount.eqn(8000));
   });
 });

@@ -52,9 +52,6 @@ async function createLocker(provider, args, cluster) {
     fundingWalletAccount.mint,
     vaultAuthority
   );
-  const [feeTokenWallet, createAssociatedTokenAccountInstrs] = await utils.getOrCreateAssociatedTokenAccountInstrs(
-    provider, fundingWalletAccount.mint, feeWallet
-  );
 
   await program.rpc.createLocker(
     {
@@ -74,14 +71,13 @@ async function createLocker(provider, args, cluster) {
         vaultAuthority,
         fundingWalletAuthority: args.fundingWalletAuthority,
         fundingWallet: args.fundingWallet,
-        feeWallet: feeTokenWallet,
+        feeWallet,
 
         clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
         systemProgram: anchor.web3.SystemProgram.programId,
         tokenProgram: utils.TOKEN_PROGRAM_ID,
       },
-      instructions: createTokenAccountInstrs
-        .concat(createAssociatedTokenAccountInstrs),
+      instructions: createTokenAccountInstrs,
       signers: [vault],
     }
   );

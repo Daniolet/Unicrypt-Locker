@@ -1,8 +1,5 @@
-use anchor_lang::{prelude::*, AccountsClose};
-use anchor_spl::{
-    associated_token::get_associated_token_address,
-    token::{self, Token, TokenAccount, Transfer},
-};
+use anchor_lang::{prelude::*, solana_program, AccountsClose};
+use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use az::CheckedAs;
 
@@ -13,7 +10,7 @@ mod fee {
 
     declare_id!("7vPbNKWdgS1dqx6ZnJR8dU9Mo6Tsgwp3S5rALuANwXiJ");
 
-    pub const FEE: u64 = 35;
+    pub const FEE: u64 = 1 * solana_program::native_token::LAMPORTS_PER_SOL;
 }
 
 #[error]
@@ -62,39 +59,25 @@ pub mod locker {
         locker.vault = ctx.accounts.vault.key();
         locker.vault_bump = args.vault_bump;
 
-        let associated_token_account =
-            get_associated_token_address(&fee::ID, &ctx.accounts.funding_wallet.mint);
+        require!(ctx.accounts.fee_wallet.key() == fee::ID, InvalidFeeWallet);
 
-        require!(
-            associated_token_account == ctx.accounts.fee_wallet.key(),
-            InvalidFeeWallet
-        );
+        solana_program::program::invoke(
+            &solana_program::system_instruction::transfer(
+                ctx.accounts.owner.to_account_info().key,
+                ctx.accounts.fee_wallet.key,
+                fee::FEE,
+            ),
+            &[
+                ctx.accounts.owner.to_account_info(),
+                ctx.accounts.fee_wallet.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
 
-        let lock_fee = mul_div(args.amount, fee::FEE, 10000).ok_or(ErrorCode::IntegerOverflow)?;
+        require!(args.amount > 0, NothingToLock);
 
         let amount_before = ctx.accounts.funding_wallet.amount;
-
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.funding_wallet.to_account_info(),
-                to: ctx.accounts.fee_wallet.to_account_info(),
-                authority: ctx.accounts.funding_wallet_authority.to_account_info(),
-            },
-        );
-        token::transfer(cpi_ctx, lock_fee)?;
-
-        ctx.accounts.funding_wallet.reload()?;
-        let amount_after_fee = ctx.accounts.funding_wallet.amount;
-        require!(
-            amount_before - amount_after_fee == lock_fee,
-            InvalidAmountTransferred
-        );
-
-        let amount_to_lock = args.amount - lock_fee;
-        require!(amount_to_lock > 0, NothingToLock);
-
-        locker.deposited_amount = amount_to_lock;
+        locker.deposited_amount = args.amount;
 
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -104,12 +87,12 @@ pub mod locker {
                 authority: ctx.accounts.funding_wallet_authority.to_account_info(),
             },
         );
-        token::transfer(cpi_ctx, amount_to_lock)?;
+        token::transfer(cpi_ctx, args.amount)?;
 
         ctx.accounts.funding_wallet.reload()?;
         let amount_final = ctx.accounts.funding_wallet.amount;
         require!(
-            amount_after_fee - amount_final == amount_to_lock,
+            amount_before - amount_final == args.amount,
             InvalidAmountTransferred
         );
 
@@ -351,11 +334,8 @@ pub struct CreateLocker<'info> {
         constraint = vault.mint == funding_wallet.mint
     )]
     vault: Account<'info, TokenAccount>,
-    #[account(
-        mut,
-        constraint = fee_wallet.mint == funding_wallet.mint
-    )]
-    fee_wallet: Account<'info, TokenAccount>,
+    #[account(mut)]
+    fee_wallet: AccountInfo<'info>,
 
     clock: Sysvar<'info, Clock>,
     system_program: Program<'info, System>,

@@ -105,5 +105,6 @@ dist
 
 target/
 .anchor/
-vesting/
+/vesting/
 /locker/
+/CountryList/
