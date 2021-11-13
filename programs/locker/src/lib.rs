@@ -1,4 +1,4 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::*, AccountsClose};
 use anchor_spl::{
     associated_token::get_associated_token_address,
     token::{self, Token, TokenAccount, Transfer},
@@ -183,6 +183,11 @@ pub mod locker {
             InvalidAmountTransferred
         );
 
+        if vault.amount == 0 {
+            vault.close(ctx.accounts.owner.to_account_info())?;
+            locker.close(ctx.accounts.owner.to_account_info())?;
+        }
+
         Ok(())
     }
 
@@ -218,6 +223,11 @@ pub mod locker {
             amount_before - amount_after == args.amount,
             InvalidAmountTransferred
         );
+
+        if old_vault.amount == 0 {
+            old_vault.close(ctx.accounts.old_owner.to_account_info())?;
+            old_locker.close(ctx.accounts.old_owner.to_account_info())?;
+        }
 
         new_locker.owner = ctx.accounts.new_owner.key();
         new_locker.country_code = old_locker.country_code;
