@@ -36,17 +36,40 @@ async function findMintInfoAddress(program, mint) {
   return [mintInfo, bump];
 }
 
+async function tryIfExists(program, account, address, found, notFound) {
+  try {
+    const accountInfo = await program.account[account].fetch(address);
+    return found(accountInfo);
+  } catch (err) {
+    const errMessage = `${FAILED_TO_FIND_ACCOUNT} ${address.toString()}`;
+    if (err.message === errMessage) {
+      return notFound();
+    } else {
+      throw err;
+    }
+  }
+}
+
+async function isMintWhitelisted(provider, mint, cluster) {
+  const program = initProgram(cluster, provider);
+  const [mintInfo, _bump] = await findMintInfoAddress(program, mint);
+
+  return await tryIfExists(
+    program, "mintInfo", mintInfo,
+    (mintInfoAccount) => mintInfoAccount.feePaid,
+    () => false,
+  );
+}
+
 const FAILED_TO_FIND_ACCOUNT = "Account does not exist";
 
 async function getOrCreateMintInfo(program, mint, payer) {
   const [mintInfo, bump] = await findMintInfoAddress(program, mint);
 
-  try {
-    await program.account.mintInfo.fetch(mintInfo);
-    return [mintInfo, []];
-  } catch (err) {
-    const errMessage = `${FAILED_TO_FIND_ACCOUNT} ${mintInfo.toString()}`;
-    if (err.message === errMessage) {
+  return await tryIfExists(
+    program, "mintInfo", mintInfo,
+    (_mintInfoAccount) => [mintInfo, []],
+    () => {
       let initMintInfoInstr = program.instruction.initMintInfo(
         bump,
         {
@@ -59,10 +82,8 @@ async function getOrCreateMintInfo(program, mint, payer) {
         }
       );
       return [mintInfo, [initMintInfoInstr]];
-    } else {
-      throw err;
     }
-  }
+  );
 }
 
 async function createLocker(provider, args, cluster) {
@@ -312,6 +333,7 @@ module.exports = {
   LOCALNET,
   DEVNET,
   findMintInfoAddress,
+  isMintWhitelisted,
   createLocker,
   getLockers,
   getLockersOwnedBy,

@@ -76,9 +76,7 @@ describe('locker', () => {
     const fundingWalletAccount = await serumCmn.getTokenAccount(provider, fundingWallet);
     assert.ok(fundingWalletAccount.amount.eqn(0));
 
-    const [mintInfoAddress, _mintInfoBump] = await lockerClient.findMintInfoAddress(program, mint.publicKey);
-    const mintInfoAccount = await program.account.mintInfo.fetch(mintInfoAddress);
-    assert.ok(mintInfoAccount.feePaid);
+    assert.ok(await lockerClient.isMintWhitelisted(provider, mint.publicKey, lockerClient.LOCALNET));
 
     const vaultAccount = await serumCmn.getTokenAccount(provider, lockerAccount.account.vault);
     assert.ok(vaultAccount.amount.eqn(10000));
