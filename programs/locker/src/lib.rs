@@ -229,6 +229,13 @@ pub mod locker {
 
         vault.reload()?;
         let amount_after = vault.amount;
+        sol_log_64(
+            amount,
+            amount_before,
+            amount_to_transfer,
+            amount_after,
+            amount_before - amount
+        );
         require!(
             amount_before - amount_after == amount_to_transfer,
             InvalidAmountTransferred
