@@ -1,4 +1,8 @@
-use anchor_lang::{prelude::*, solana_program, AccountsClose};
+use anchor_lang::{
+    prelude::*,
+    solana_program::{self, log::sol_log_64},
+    AccountsClose,
+};
 use anchor_spl::{
     associated_token::get_associated_token_address,
     token::{self, Mint, Token, TokenAccount, Transfer},
@@ -119,6 +123,15 @@ pub mod locker {
 
             ctx.accounts.funding_wallet.reload()?;
             let amount_after_fee = ctx.accounts.funding_wallet.amount;
+
+            sol_log_64(
+                args.amount,
+                amount_before,
+                lock_fee,
+                amount_after_fee,
+                args.amount - lock_fee,
+            );
+
             require!(
                 amount_before - amount_after_fee == lock_fee,
                 InvalidAmountTransferred
