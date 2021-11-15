@@ -206,5 +206,23 @@ describe('locker', () => {
     const vaultWallet = await serumCmn.getTokenAccount(provider, lockerAccount.account.vault);
     // 10000 - 1000 (gone in a split) - 1000 (withdraw amount)
     assert.ok(vaultWallet.amount.eqn(8000));
+
+    await lockerClient.withdrawFunds(provider, {
+      amount: new anchor.BN(8000),
+      locker: lockerAccount,
+      targetWallet: provider.wallet.publicKey,
+      createAssociated: true,
+    },
+      lockerClient.LOCALNET
+    );
+
+    assert.rejects(
+      async () => {
+        await serumCmn.getTokenAccount(provider, lockerAccount.account.vault);
+      },
+      (err) => {
+        assert.ok(err.message == "Failed to find token account");
+      }
+    );
   });
 });

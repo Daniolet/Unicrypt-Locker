@@ -5,7 +5,7 @@ use anchor_lang::{
 };
 use anchor_spl::{
     associated_token::get_associated_token_address,
-    token::{self, Mint, Token, TokenAccount, Transfer},
+    token::{self, CloseAccount, Mint, Token, TokenAccount, Transfer},
 };
 
 use az::CheckedAs;
@@ -234,7 +234,7 @@ pub mod locker {
             amount_before,
             amount_to_transfer,
             amount_after,
-            amount_before - amount
+            amount_before - amount,
         );
         require!(
             amount_before - amount_after == amount_to_transfer,
@@ -242,7 +242,17 @@ pub mod locker {
         );
 
         if vault.amount == 0 {
-            vault.close(ctx.accounts.owner.to_account_info())?;
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                CloseAccount {
+                    account: vault.to_account_info(),
+                    destination: ctx.accounts.owner.to_account_info(),
+                    authority: ctx.accounts.vault_authority.to_account_info(),
+                },
+                signer,
+            );
+            token::close_account(cpi_ctx)?;
+
             locker.close(ctx.accounts.owner.to_account_info())?;
         }
 
@@ -283,7 +293,17 @@ pub mod locker {
         );
 
         if old_vault.amount == 0 {
-            old_vault.close(ctx.accounts.old_owner.to_account_info())?;
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                CloseAccount {
+                    account: old_vault.to_account_info(),
+                    destination: ctx.accounts.old_owner.to_account_info(),
+                    authority: ctx.accounts.old_vault_authority.to_account_info(),
+                },
+                signer,
+            );
+            token::close_account(cpi_ctx)?;
+
             old_locker.close(ctx.accounts.old_owner.to_account_info())?;
         }
 
@@ -325,7 +345,17 @@ pub mod locker {
         vault.reload()?;
         require!(vault.amount == 0, InvalidAmountTransferred);
 
-        vault.close(ctx.accounts.owner.to_account_info())?;
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            CloseAccount {
+                account: vault.to_account_info(),
+                destination: ctx.accounts.owner.to_account_info(),
+                authority: ctx.accounts.vault_authority.to_account_info(),
+            },
+            signer,
+        );
+        token::close_account(cpi_ctx)?;
+
         locker.close(ctx.accounts.owner.to_account_info())?;
 
         Ok(())
@@ -482,6 +512,7 @@ pub struct TransferOwnership<'info> {
 
 #[derive(Accounts)]
 pub struct WithdrawFunds<'info> {
+    #[account(mut)]
     locker: ProgramAccount<'info, Locker>,
     #[account(
         signer,
@@ -558,6 +589,7 @@ pub struct SplitLocker<'info> {
 
 #[derive(Accounts)]
 pub struct CloseLocker<'info> {
+    #[account(mut)]
     locker: ProgramAccount<'info, Locker>,
     #[account(
         signer,
