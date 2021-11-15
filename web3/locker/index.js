@@ -224,6 +224,18 @@ async function withdrawFunds(provider, args, cluster) {
     program.programId,
   );
 
+  let targetWallet = args.targetWallet;
+  let extraInstructions = [];
+
+  if (args.createAssociated) {
+    const vaultWalletAccount = await serumCmn.getTokenAccount(provider, args.locker.account.vault);
+    const [targetTokenWallet, createAssociatedTokenAccountInstrs] = await utils.getOrCreateAssociatedTokenAccountInstrs(
+      provider, vaultWalletAccount.mint, targetWallet
+    );
+    targetWallet = targetTokenWallet;
+    extraInstructions.concat(createAssociatedTokenAccountInstrs);
+  }
+
   await program.rpc.withdrawFunds(
     args.amount,
     {
@@ -232,13 +244,16 @@ async function withdrawFunds(provider, args, cluster) {
         owner: args.locker.account.owner,
         vaultAuthority,
         vault: args.locker.account.vault,
-        targetWallet: args.targetWallet,
+        targetWallet,
 
         clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
         tokenProgram: utils.TOKEN_PROGRAM_ID,
-      }
+      },
+      instructions: extraInstructions
     }
   );
+
+  return targetWallet;
 }
 
 async function closeLocker(provider, args, cluster) {

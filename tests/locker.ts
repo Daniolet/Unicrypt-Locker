@@ -187,7 +187,8 @@ describe('locker', () => {
         await lockerClient.withdrawFunds(provider, {
           amount,
           locker: lockerAccount,
-          targetWallet: fundingWallet,
+          targetWallet: provider.wallet.publicKey,
+          createAssociated: true,
         },
           lockerClient.LOCALNET
         );
@@ -198,7 +199,8 @@ describe('locker', () => {
       }
     }
 
-    const targetWallet = await serumCmn.getTokenAccount(provider, fundingWallet);
+    const targetWalletAddress = await anchor.utils.token.associatedAddress({ mint: mint.publicKey, owner: provider.wallet.publicKey });
+    const targetWallet = await serumCmn.getTokenAccount(provider, targetWalletAddress);
     assert.ok(targetWallet.amount.eq(amount));
 
     const vaultWallet = await serumCmn.getTokenAccount(provider, lockerAccount.account.vault);

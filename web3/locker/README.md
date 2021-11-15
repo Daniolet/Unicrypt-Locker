@@ -100,11 +100,18 @@ await lockerClient.createLocker(provider, {
     amount,
     // Locker account as returned from `getLockers`
     locker,
+    // if true, `targetWallet` should ordinary account public key like provider.wallet.publicKey
+    // if not, `targetWallet` should an SPL token account
+    createAssociated,
     // Public key of a wallet to transfer tokens to
-    // Should be an SPL token account!
+    // if `createAssociated`, then associated SPL token account will be
+    // created for this ordinary solana account
+    // if not, it should SPL token account
     targetWallet,
 }
 ```
+
+Returns resulting targetWallet (associated or original).
 
 ## Split the Locker
 
