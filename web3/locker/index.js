@@ -213,6 +213,37 @@ async function transferOwnership(provider, args, cluster) {
   await program.rpc.transferOwnership(rpcArgs);
 }
 
+async function incrementLock(provider, args, cluster) {
+  const program = initProgram(cluster, provider);
+
+  const fundingWalletAccount = await serumCmn.getTokenAccount(provider, args.fundingWallet);
+  const [mintInfo, initMintInfoInstrs] = await getOrCreateMintInfo(
+    program,
+    fundingWalletAccount.mint,
+    args.fundingWalletAuthority
+  );
+  const [feeTokenWallet, createAssociatedTokenAccountInstrs] = await utils.getOrCreateAssociatedTokenAccountInstrs(
+    provider, fundingWalletAccount.mint, feeWallet
+  );
+
+  await program.rpc.incrementLock(
+    args.amount,
+    {
+      accounts: {
+        locker: args.locker.publicKey,
+        vault: args.locker.account.vault,
+        fundingWallet: args.fundingWallet,
+        fundingWalletAuthority: args.fundingWalletAuthority,
+        feeWallet: feeTokenWallet,
+        tokenProgram: utils.TOKEN_PROGRAM_ID,
+        mintInfo,
+      },
+      instructions: initMintInfoInstrs
+        .concat(createAssociatedTokenAccountInstrs)
+    }
+  );
+}
+
 async function withdrawFunds(provider, args, cluster) {
   const program = initProgram(cluster, provider);
 
@@ -354,6 +385,7 @@ module.exports = {
   getLockersOwnedBy,
   relock,
   transferOwnership,
+  incrementLock,
   withdrawFunds,
   closeLocker,
   splitLocker,

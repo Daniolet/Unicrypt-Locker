@@ -149,6 +149,52 @@
       "args": []
     },
     {
+      "name": "incrementLock",
+      "accounts": [
+        {
+          "name": "locker",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "vault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "mintInfo",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "fundingWalletAuthority",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "fundingWallet",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "feeWallet",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "withdrawFunds",
       "accounts": [
         {

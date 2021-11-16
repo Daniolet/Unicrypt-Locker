@@ -1,3 +1,5 @@
+use std::ops::DerefMut;
+
 use anchor_lang::{
     prelude::*,
     solana_program::{self, log::sol_log_64},
@@ -42,40 +44,27 @@ pub mod locker {
     use super::*;
 
     pub fn init_mint_info(ctx: Context<InitMintInfo>, bump: u8) -> Result<()> {
-        let mint_info = &mut ctx.accounts.mint_info;
+        let mint_info = ctx.accounts.mint_info.deref_mut();
 
-        mint_info.bump = bump;
-        mint_info.fee_paid = false;
+        *mint_info = MintInfo {
+            bump,
+            fee_paid: false,
+        };
 
         Ok(())
     }
 
     pub fn create_locker(ctx: Context<CreateLocker>, args: CreateLockerArgs) -> Result<()> {
-        let locker = &mut ctx.accounts.locker;
-        let mint_info = &mut ctx.accounts.mint_info;
-
         let now = ctx.accounts.clock.unix_timestamp;
         require!(args.unlock_date > now, UnlockInThePast);
         // prevents errors when timestamp entered as milliseconds
         require!(args.unlock_date < 10000000000, InvalidTimestamp);
 
-        locker.original_unlock_date = args.unlock_date;
-        locker.current_unlock_date = args.unlock_date;
-
-        locker.country_code = args.country_code;
-
         if let Some(start_emission) = args.start_emission {
             require!(args.unlock_date > start_emission, InvalidPeriod);
         }
-        locker.start_emission = args.start_emission;
 
-        locker.owner = ctx.accounts.owner.key();
-        locker.creator = ctx.accounts.creator.key();
-
-        locker.bump = args.locker_bump;
-
-        locker.vault = ctx.accounts.vault.key();
-        locker.vault_bump = args.vault_bump;
+        let mint_info = &mut ctx.accounts.mint_info;
 
         let (amount_before, amount_to_lock) = if args.fee_in_sol {
             require!(ctx.accounts.fee_wallet.key() == fee::ID, InvalidFeeWallet);
@@ -142,7 +131,20 @@ pub mod locker {
 
         require!(amount_to_lock > 0, NothingToLock);
 
-        locker.deposited_amount = amount_to_lock;
+        let locker = ctx.accounts.locker.deref_mut();
+
+        *locker = Locker {
+            owner: ctx.accounts.owner.key(),
+            country_code: args.country_code,
+            current_unlock_date: args.unlock_date,
+            start_emission: args.start_emission,
+            deposited_amount: amount_to_lock,
+            vault: ctx.accounts.vault.key(),
+            vault_bump: args.vault_bump,
+            creator: ctx.accounts.creator.key(),
+            original_unlock_date: args.unlock_date,
+            bump: args.locker_bump,
+        };
 
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -181,6 +183,55 @@ pub mod locker {
         let locker = &mut ctx.accounts.locker;
 
         locker.owner = ctx.accounts.new_owner.key();
+
+        Ok(())
+    }
+
+    pub fn increment_lock(ctx: Context<IncrementLock>, amount: u64) -> Result<()> {
+        let locker = &mut ctx.accounts.locker;
+        let mint_info = &ctx.accounts.mint_info;
+
+        let amount_to_lock = if mint_info.fee_paid {
+            amount
+        } else {
+            let lock_fee =
+                mul_div(amount, fee::FEE_PERMILLE, 10000).ok_or(ErrorCode::IntegerOverflow)?;
+
+            let associated_token_account =
+                get_associated_token_address(&fee::ID, &ctx.accounts.funding_wallet.mint);
+
+            require!(
+                associated_token_account == ctx.accounts.fee_wallet.key(),
+                InvalidFeeWallet
+            );
+
+            let cpi_ctx = CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.funding_wallet.to_account_info(),
+                    to: ctx.accounts.fee_wallet.to_account_info(),
+                    authority: ctx.accounts.funding_wallet_authority.to_account_info(),
+                },
+            );
+            token::transfer(cpi_ctx, lock_fee)?;
+
+            amount - lock_fee
+        };
+
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.funding_wallet.to_account_info(),
+                to: ctx.accounts.vault.to_account_info(),
+                authority: ctx.accounts.funding_wallet_authority.to_account_info(),
+            },
+        );
+        token::transfer(cpi_ctx, amount_to_lock)?;
+
+        locker.deposited_amount = locker
+            .deposited_amount
+            .checked_add(amount_to_lock)
+            .ok_or(ErrorCode::IntegerOverflow)?;
 
         Ok(())
     }
@@ -508,6 +559,33 @@ pub struct TransferOwnership<'info> {
     )]
     owner: AccountInfo<'info>,
     new_owner: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct IncrementLock<'info> {
+    #[account(mut)]
+    locker: ProgramAccount<'info, Locker>,
+    #[account(
+        mut,
+        constraint = vault.mint == funding_wallet.mint,
+        constraint = locker.vault == vault.key()
+    )]
+    vault: Account<'info, TokenAccount>,
+    #[account(
+        seeds = [
+            vault.mint.key().as_ref()
+        ],
+        bump = mint_info.bump
+    )]
+    mint_info: ProgramAccount<'info, MintInfo>,
+    #[account(signer)]
+    funding_wallet_authority: AccountInfo<'info>,
+    #[account(mut)]
+    funding_wallet: Account<'info, TokenAccount>,
+    #[account(mut)]
+    fee_wallet: AccountInfo<'info>,
+
+    token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]

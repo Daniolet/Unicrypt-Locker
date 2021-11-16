@@ -44,7 +44,7 @@ describe('locker', () => {
       provider.wallet.publicKey,
     );
 
-    await mint.mintTo(fundingWallet, provider.wallet.publicKey, [], 10000);
+    await mint.mintTo(fundingWallet, provider.wallet.publicKey, [], 11000);
 
     await lockerClient.createLocker(provider,
       {
@@ -74,7 +74,7 @@ describe('locker', () => {
     assert.ok(lockerAccount.account.originalUnlockDate.eq(unlockDate));
 
     const fundingWalletAccount = await serumCmn.getTokenAccount(provider, fundingWallet);
-    assert.ok(fundingWalletAccount.amount.eqn(0));
+    assert.ok(fundingWalletAccount.amount.eqn(1000));
 
     assert.ok(await lockerClient.isMintWhitelisted(provider, mint.publicKey, lockerClient.LOCALNET));
 
@@ -152,6 +152,21 @@ describe('locker', () => {
     assert.ok(lockerAccountFinal.owner.equals(lockerAccountBefore.account.owner));
   });
 
+  it('Increments the lock', async () => {
+    const lockers = await program.account.locker.all();
+    const lockerAccountBefore = lockers[0];
+
+    await lockerClient.incrementLock(provider, {
+      amount: new anchor.BN(1000),
+      locker: lockerAccountBefore,
+      fundingWallet,
+      fundingWalletAuthority: provider.wallet.publicKey,
+    }, lockerClient.LOCALNET)
+
+    const lockerAccountFinal = await program.account.locker.fetch(lockerAccountBefore.publicKey);
+    assert.ok(lockerAccountFinal.depositedAmount.eqn(11000));
+  });
+
   it('Splits the locker', async () => {
     let lockers = await program.account.locker.all();
     const locker = lockers[0];
@@ -173,7 +188,7 @@ describe('locker', () => {
     assert.ok(newLocker.account.depositedAmount.eq(amount));
 
     const oldVaultAccount = await serumCmn.getTokenAccount(provider, locker.account.vault);
-    assert.ok(oldVaultAccount.amount.eqn(9000));
+    assert.ok(oldVaultAccount.amount.eqn(10000));
   });
 
   it('Withdraws the funds', async () => {
@@ -205,10 +220,10 @@ describe('locker', () => {
 
     const vaultWallet = await serumCmn.getTokenAccount(provider, lockerAccount.account.vault);
     // 10000 - 1000 (gone in a split) - 1000 (withdraw amount)
-    assert.ok(vaultWallet.amount.eqn(8000));
+    assert.ok(vaultWallet.amount.eqn(9000));
 
     await lockerClient.withdrawFunds(provider, {
-      amount: new anchor.BN(8000),
+      amount: new anchor.BN(9000),
       locker: lockerAccount,
       targetWallet: provider.wallet.publicKey,
       createAssociated: true,

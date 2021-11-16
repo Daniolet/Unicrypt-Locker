@@ -20,7 +20,7 @@ await lockerClient.createLocker(provider, {
 
 `createLocker(provider, args)`
 
-* `provider` -- solana web3 provider
+* `provider` -- anchor web3 provider
 * `args`:
 
 ```js
@@ -55,18 +55,18 @@ await lockerClient.createLocker(provider, {
 
 `getLockers(provider)` -- returns created lockers.
 
-* `provider` -- solana web3 provider
+* `provider` -- anchor web3 provider
 
 `getLockersOwnerBy(provider, owner)` -- returns lockers owned by specific account.
 
-* `provider` -- solana web3 provider
+* `provider` -- anchor web3 provider
 * `owner` -- account public key
 
 ## Relock
 
 `relock(provider, unlockDate)`
 
-* `provider` -- solana web3 provider
+* `provider` -- anchor web3 provider
 * `unlockDate` -- new unlock date
     - should be later than original one
     - anchor.BN
@@ -75,7 +75,7 @@ await lockerClient.createLocker(provider, {
 
 `transferOwnership(provider, args)`
 
-* `provider` -- solana web3 provider
+* `provider` -- anchor web3 provider
 * `args`:
 
 ```js
@@ -87,11 +87,33 @@ await lockerClient.createLocker(provider, {
 }
 ```
 
+## Increment Lock
+
+`incrementLock(provider, args)`
+
+* `provider` -- anchor web3 provider
+* `args`:
+
+```js
+{
+    // Locker account as returned from `getLockers`
+    locker,
+    // Amount to lock. anchor.BN
+    amount,
+    // public key of funding wallet owner
+    // (provider.wallet.publicKey in the simplest case)
+    fundingWalletAuthority,
+    // address of source SPL token account
+    fundingWallet,
+}
+```
+
+
 ## Withdraw Funds
 
 `withdrawFunds(provider, args)`
 
-* `provider` -- solana web3 provider
+* `provider` -- anchor web3 provider
 * `args`:
 
 ```js
@@ -117,7 +139,7 @@ Returns resulting targetWallet (associated or original).
 
 `splitLocker(provider, args)`
 
-* `provider` -- solana web3 provider
+* `provider` -- anchor web3 provider
 * `args`:
 
 ```js
@@ -135,7 +157,7 @@ Returns resulting targetWallet (associated or original).
 
 `closeLocker(provider, args)`
 
-* `provider` -- solana web3 provider
+* `provider` -- anchor web3 provider
 * `args`:
 
 ```js
