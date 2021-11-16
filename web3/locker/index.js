@@ -93,6 +93,7 @@ async function createLocker(provider, args, cluster) {
     [
       args.creator.toBytes(),
       args.unlockDate.toArray('be', 8),
+      args.amount.toArray('be', 8)
     ],
     program.programId
   );
@@ -328,6 +329,7 @@ async function splitLocker(provider, args, cluster) {
     [
       args.locker.account.owner.toBytes(),
       args.locker.account.currentUnlockDate.toArray('be', 8),
+      args.amount.toArray('be', 8),
     ],
     program.programId
   );

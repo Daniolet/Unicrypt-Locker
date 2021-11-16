@@ -499,6 +499,7 @@ pub struct CreateLocker<'info> {
         seeds = [
             creator.key().as_ref(),
             args.unlock_date.to_be_bytes().as_ref(),
+            args.amount.to_be_bytes().as_ref(),
         ],
         bump = args.locker_bump
     )]
@@ -643,6 +644,7 @@ pub struct SplitLocker<'info> {
         seeds = [
             old_owner.key().as_ref(),
             old_locker.current_unlock_date.to_be_bytes().as_ref(),
+            args.amount.to_be_bytes().as_ref()
         ],
         bump = args.locker_bump,
     )]
