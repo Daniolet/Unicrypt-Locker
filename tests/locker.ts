@@ -6,7 +6,6 @@ import { Locker } from '../target/types/locker';
 import lockerClient from "../web3/locker/index";
 
 import * as assert from 'assert';
-import { TRANSFER_OWNER_INDEX } from '@project-serum/serum/lib/token-instructions';
 
 async function createMint(provider: anchor.Provider, authority?: anchor.web3.PublicKey) {
   if (authority === undefined) {

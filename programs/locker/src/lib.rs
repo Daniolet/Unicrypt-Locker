@@ -69,6 +69,9 @@ pub mod locker {
         let (amount_before, amount_to_lock) = if args.fee_in_sol {
             require!(ctx.accounts.fee_wallet.key() == fee::ID, InvalidFeeWallet);
 
+            ctx.accounts.owner.key().log();
+            ctx.accounts.fee_wallet.key().log();
+
             if !mint_info.fee_paid {
                 solana_program::program::invoke(
                     &solana_program::system_instruction::transfer(
@@ -99,6 +102,10 @@ pub mod locker {
 
             let lock_fee =
                 mul_div(args.amount, fee::FEE_PERMILLE, 10000).ok_or(ErrorCode::IntegerOverflow)?;
+
+            ctx.accounts.funding_wallet.key().log();
+            ctx.accounts.fee_wallet.key().log();
+            ctx.accounts.funding_wallet_authority.key().log();
 
             let cpi_ctx = CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
@@ -145,6 +152,10 @@ pub mod locker {
             original_unlock_date: args.unlock_date,
             bump: args.locker_bump,
         };
+
+        ctx.accounts.funding_wallet.key().log();
+        ctx.accounts.vault.key().log();
+        ctx.accounts.funding_wallet_authority.key().log();
 
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -313,7 +324,7 @@ pub mod locker {
     pub fn split_locker(ctx: Context<SplitLocker>, args: SplitLockerArgs) -> Result<()> {
         require!(args.amount > 0, InvalidAmount);
 
-        let new_locker = &mut ctx.accounts.new_locker;
+        let new_locker = ctx.accounts.new_locker.deref_mut();
         let old_locker = &mut ctx.accounts.old_locker;
         let old_vault = &mut ctx.accounts.old_vault;
 
@@ -343,6 +354,11 @@ pub mod locker {
             InvalidAmountTransferred
         );
 
+        old_locker.deposited_amount = old_locker
+            .deposited_amount
+            .checked_sub(args.amount)
+            .ok_or(ErrorCode::IntegerOverflow)?;
+
         if old_vault.amount == 0 {
             let cpi_ctx = CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
@@ -358,18 +374,18 @@ pub mod locker {
             old_locker.close(ctx.accounts.old_owner.to_account_info())?;
         }
 
-        new_locker.owner = ctx.accounts.new_owner.key();
-        new_locker.country_code = old_locker.country_code;
-        new_locker.current_unlock_date = old_locker.current_unlock_date;
-        new_locker.start_emission = old_locker.start_emission;
-
-        new_locker.original_unlock_date = old_locker.current_unlock_date;
-        new_locker.creator = ctx.accounts.old_owner.key();
-        new_locker.bump = args.locker_bump;
-
-        new_locker.deposited_amount = args.amount;
-        new_locker.vault = ctx.accounts.new_vault.key();
-        new_locker.vault_bump = args.vault_bump;
+        *new_locker = Locker {
+            owner: ctx.accounts.new_owner.key(),
+            country_code: old_locker.country_code,
+            current_unlock_date: old_locker.current_unlock_date,
+            start_emission: old_locker.start_emission,
+            deposited_amount: args.amount,
+            vault: ctx.accounts.new_vault.key(),
+            vault_bump: args.vault_bump,
+            creator: ctx.accounts.old_owner.key(),
+            original_unlock_date: old_locker.current_unlock_date,
+            bump: args.locker_bump,
+        };
 
         Ok(())
     }
@@ -642,7 +658,7 @@ pub struct SplitLocker<'info> {
         init,
         payer = old_owner,
         seeds = [
-            old_owner.key().as_ref(),
+            old_locker.key().as_ref(),
             old_locker.current_unlock_date.to_be_bytes().as_ref(),
             args.amount.to_be_bytes().as_ref()
         ],

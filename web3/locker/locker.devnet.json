@@ -387,6 +387,12 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "originalLocker",
+            "type": {
+              "option": "publicKey"
+            }
           }
         ]
       }

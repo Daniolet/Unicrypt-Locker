@@ -327,7 +327,7 @@ async function splitLocker(provider, args, cluster) {
 
   const [newLocker, newLockerBump] = await anchor.web3.PublicKey.findProgramAddress(
     [
-      args.locker.account.owner.toBytes(),
+      args.locker.publicKey.toBytes(),
       args.locker.account.currentUnlockDate.toArray('be', 8),
       args.amount.toArray('be', 8),
     ],
