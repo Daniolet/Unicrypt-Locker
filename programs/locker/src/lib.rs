@@ -37,6 +37,7 @@ pub enum ErrorCode {
     CannotUnlockToEarlierDate,
     TooEarlyToWithdraw,
     InvalidAmount,
+    InvalidCountry,
 }
 
 #[program]
@@ -63,6 +64,13 @@ pub mod locker {
         if let Some(start_emission) = args.start_emission {
             require!(args.unlock_date > start_emission, InvalidPeriod);
         }
+
+        require!(
+            ctx.accounts
+                .country_banlist
+                .is_country_valid(&args.country_code),
+            InvalidCountry
+        );
 
         let mint_info = &mut ctx.accounts.mint_info;
 
@@ -142,7 +150,7 @@ pub mod locker {
 
         *locker = Locker {
             owner: ctx.accounts.owner.key(),
-            country_code: args.country_code,
+            country_code: country_list::string_to_byte_array(&args.country_code),
             current_unlock_date: args.unlock_date,
             start_emission: args.start_emission,
             deposited_amount: amount_to_lock,
@@ -432,7 +440,7 @@ pub mod locker {
 #[account]
 pub struct Locker {
     owner: Pubkey,
-    country_code: u16,
+    country_code: [u8; 2],
     current_unlock_date: i64,
     start_emission: Option<i64>,
     deposited_amount: u64,
@@ -499,7 +507,7 @@ pub struct InitMintInfo<'info> {
 pub struct CreateLockerArgs {
     amount: u64,
     unlock_date: i64,
-    country_code: u16,
+    country_code: String,
     start_emission: Option<i64>,
     locker_bump: u8,
     vault_bump: u8,
@@ -549,6 +557,7 @@ pub struct CreateLocker<'info> {
         bump = mint_info.bump
     )]
     mint_info: ProgramAccount<'info, MintInfo>,
+    country_banlist: Account<'info, country_list::CountryBanList>,
 
     clock: Sysvar<'info, Clock>,
     system_program: Program<'info, System>,

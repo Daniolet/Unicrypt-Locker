@@ -10,6 +10,8 @@ const lockerIdlDevnet = require('./locker.devnet.json');
 const programIdLocalnet = new solana_web3.PublicKey(lockerIdl.metadata.address);
 const programIdDevnet = new solana_web3.PublicKey(lockerIdlDevnet.metadata.address);
 
+const countryListDevnet = new solana_web3.PublicKey("GkHZ3qzHwRZ4TrGQT57SgBNv4MsygBPaZzPmFu2757Vx");
+
 const feeWallet = new anchor.web3.PublicKey("7vPbNKWdgS1dqx6ZnJR8dU9Mo6Tsgwp3S5rALuANwXiJ");
 
 const LOCALNET = 'localnet';
@@ -23,6 +25,17 @@ function initProgram(cluster, provider) {
     case DEVNET:
     default:
       return new anchor.Program(lockerIdlDevnet, programIdDevnet, provider);
+  }
+}
+
+function getCountryList(cluster) {
+  switch (cluster) {
+    case LOCALNET:
+      return undefined;
+
+    case DEVNET:
+    default:
+      return countryListDevnet;
   }
 }
 
@@ -124,6 +137,7 @@ async function createLocker(provider, args, cluster) {
   );
 
   const finalFeeWallet = args.feeInSol ? feeWallet : feeTokenWallet;
+  const countryBanlist = args.countryBanlist === undefined ? getCountryList(cluster) : args.countryBanlist;
 
   await program.rpc.createLocker(
     {
@@ -146,6 +160,7 @@ async function createLocker(provider, args, cluster) {
         fundingWallet: args.fundingWallet,
         feeWallet: finalFeeWallet,
         mintInfo,
+        countryBanlist,
 
         clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
         systemProgram: anchor.web3.SystemProgram.programId,

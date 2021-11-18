@@ -1,11 +1,11 @@
 import * as anchor from '@project-serum/anchor';
 import * as spl from "@solana/spl-token";
 import * as serumCmn from "@project-serum/common";
-import { Locker } from '../target/types/locker';
-
-import lockerClient from "../web3/locker/index";
-
 import * as assert from 'assert';
+
+import { Locker } from '../target/types/locker';
+import { CountryList } from '../target/types/country_list';
+import lockerClient from "../web3/locker/index";
 
 async function createMint(provider: anchor.Provider, authority?: anchor.web3.PublicKey) {
   if (authority === undefined) {
@@ -27,9 +27,11 @@ describe('locker', () => {
   anchor.setProvider(provider);
 
   const program = anchor.workspace.Locker as anchor.Program<Locker>;
+  const countryListProgram = anchor.workspace.CountryList as anchor.Program<CountryList>;
   const creator = provider.wallet.publicKey;
   const unlockDate = new anchor.BN(Date.now() / 1000 + 4);
   const newOwner = anchor.web3.Keypair.generate();
+  const countryList = anchor.web3.Keypair.generate();
 
   let
     mint: spl.Token,
@@ -43,18 +45,33 @@ describe('locker', () => {
       provider.wallet.publicKey,
     );
 
+    await countryListProgram.rpc.initialize(
+      [
+        new TextEncoder().encode("RU")
+      ],
+      {
+        accounts: {
+          countryBanlist: countryList.publicKey,
+          admin: provider.wallet.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        },
+        signers: [countryList]
+      }
+    );
+
     await mint.mintTo(fundingWallet, provider.wallet.publicKey, [], 11000);
 
     await lockerClient.createLocker(provider,
       {
         unlockDate,
-        countryCode: 54,
+        countryCode: "RU",
         startEmission: null,
         amount: new anchor.BN(10000),
         creator,
         owner: creator,
         fundingWalletAuthority: creator,
         fundingWallet,
+        countryBanlist: countryList.publicKey,
         feeInSol: true,
       },
       lockerClient.LOCALNET
@@ -68,7 +85,7 @@ describe('locker', () => {
     assert.ok(lockerAccount.account.owner.equals(creator));
     assert.ok(lockerAccount.account.creator.equals(creator));
     assert.deepStrictEqual(lockerAccount.account.startEmission, null);
-    assert.deepStrictEqual(lockerAccount.account.countryCode, 54);
+    assert.deepStrictEqual(lockerAccount.account.countryCode, [82, 85]);
     assert.ok(lockerAccount.account.currentUnlockDate.eq(unlockDate));
     assert.ok(lockerAccount.account.originalUnlockDate.eq(unlockDate));
 

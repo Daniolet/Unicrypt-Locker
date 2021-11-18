@@ -82,6 +82,11 @@
           "isSigner": false
         },
         {
+          "name": "countryBanlist",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
           "name": "clock",
           "isMut": false,
           "isSigner": false
@@ -352,7 +357,12 @@
           },
           {
             "name": "countryCode",
-            "type": "u16"
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
           },
           {
             "name": "currentUnlockDate",
@@ -424,7 +434,7 @@
           },
           {
             "name": "countryCode",
-            "type": "u16"
+            "type": "string"
           },
           {
             "name": "startEmission",
@@ -510,6 +520,10 @@
     {
       "code": 309,
       "name": "InvalidAmount"
+    },
+    {
+      "code": 310,
+      "name": "InvalidCountry"
     }
   ],
   "metadata": {

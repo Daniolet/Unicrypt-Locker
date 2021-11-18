@@ -27,7 +27,7 @@ await lockerClient.createLocker(provider, {
 {
     // unix timestamp (seconds!) of type anchor.BN
     unlockDate,
-    // some number
+    // 2 letter country code ("RU", "UK" etc)
     countryCode,
     // null for now
     startEmission,

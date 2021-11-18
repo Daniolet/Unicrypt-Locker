@@ -71,6 +71,15 @@ impl CountryBanList {
     pub const LEN: usize = std::mem::size_of::<Pubkey>()
         + Self::MAX_COUNTRIES * std::mem::size_of::<CountryData>()
         + 8;
+
+    pub fn is_country_valid(&self, country: &str) -> bool {
+        let array = string_to_byte_array(&country);
+        let maybe_country = self.countries.iter().find(|c| c.code == array);
+        match maybe_country {
+            Some(country) => !country.banned,
+            None => false,
+        }
+    }
 }
 
 impl Default for CountryBanList {
