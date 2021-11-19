@@ -211,7 +211,7 @@ async function getLockersOwnedBy(provider, owner, cluster) {
 async function relock(provider, args, cluster) {
   const program = initProgram(cluster, provider);
 
-  await program.rpc.relock(
+  return await program.rpc.relock(
     args.unlockDate,
     {
       accounts: {
@@ -237,7 +237,7 @@ async function transferOwnership(provider, args, cluster) {
     rpcArgs.signers = args.signers;
   }
 
-  await program.rpc.transferOwnership(rpcArgs);
+  return await program.rpc.transferOwnership(rpcArgs);
 }
 
 async function incrementLock(provider, args, cluster) {
@@ -269,6 +269,8 @@ async function incrementLock(provider, args, cluster) {
         .concat(createAssociatedTokenAccountInstrs)
     }
   );
+
+  return feeTokenWallet;
 }
 
 async function withdrawFunds(provider, args, cluster) {
@@ -338,6 +340,8 @@ async function closeLocker(provider, args, cluster) {
       }
     }
   );
+
+  return vaultAuthority;
 }
 
 async function splitLocker(provider, args, cluster) {
@@ -401,6 +405,8 @@ async function splitLocker(provider, args, cluster) {
       signers: [newVault],
     }
   );
+
+  return newVault;
 }
 
 module.exports = {
