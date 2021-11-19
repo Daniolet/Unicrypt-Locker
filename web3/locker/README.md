@@ -178,3 +178,10 @@ Returns resulting targetWallet (associated or original).
 * `mint` -- token public key
 
 Returns simple boolean.
+
+## Find vault authority (owner) address
+
+`vaultAuthorityAddress(provider, locker)`
+
+* `provider` -- as always
+* `locker` -- as returned from `getLockers`

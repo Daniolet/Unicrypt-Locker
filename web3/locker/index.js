@@ -99,6 +99,17 @@ async function getOrCreateMintInfo(program, mint, payer) {
   );
 }
 
+async function vaultAuthorityAddress(provider, locker, cluster) {
+  const program = initProgram(cluster, provider);
+  return await anchor.web3.PublicKey.createProgramAddress(
+    [
+      locker.publicKey.toBytes(),
+      [locker.account.vaultBump]
+    ],
+    program.programId
+  );
+}
+
 async function createLocker(provider, args, cluster) {
   const program = initProgram(cluster, provider);
 
@@ -396,6 +407,7 @@ module.exports = {
   LOCALNET,
   DEVNET,
   findMintInfoAddress,
+  vaultAuthorityAddress,
   isMintWhitelisted,
   createLocker,
   getLockers,
