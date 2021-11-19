@@ -256,4 +256,52 @@ describe('locker', () => {
       }
     );
   });
+
+  it('Creates locker with linear emission', async () => {
+    await mint.mintTo(fundingWallet, provider.wallet.publicKey, [], 1000);
+
+    const now = new anchor.BN(Date.now()).divn(1000);
+    const unlockDate = now.addn(20);
+
+    const locker = await lockerClient.createLocker(provider,
+      {
+        unlockDate,
+        countryCode: "RU",
+        startEmission: now,
+        amount: new anchor.BN(1000),
+        creator,
+        owner: creator,
+        fundingWalletAuthority: creator,
+        fundingWallet,
+        countryBanlist: countryList.publicKey,
+        feeInSol: true,
+      },
+      lockerClient.LOCALNET
+    );
+
+    await lockerClient.utils.sleep(5000);
+
+    let lockerAccount = await program.account.locker.fetch(locker);
+
+    await lockerClient.withdrawFunds(provider, {
+      amount: new anchor.BN(900), // some number, it will not play any role at all
+      locker: {
+        publicKey: locker,
+        account: lockerAccount,
+      },
+      targetWallet: fundingWallet,
+      createAssociated: false,
+    },
+      lockerClient.LOCALNET
+    );
+
+    const fundingWalletAccount = await serumCmn.getTokenAccount(provider, fundingWallet);
+    // should be 250 but it's hard to guarantee the exact value
+    assert.ok(fundingWalletAccount.amount.gten(245) && fundingWalletAccount.amount.lten(255));
+
+    lockerAccount = await program.account.locker.fetch(locker);
+    const vaultWallet = await serumCmn.getTokenAccount(provider, lockerAccount.vault);
+    // should be 750 but it's hard to guarantree the exact value
+    assert.ok(vaultWallet.amount.gten(745) && fundingWalletAccount.amount.lten(755));
+  })
 });

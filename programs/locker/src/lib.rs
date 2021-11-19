@@ -267,6 +267,14 @@ pub mod locker {
                 let full_period = locker.current_unlock_date - start_emission;
                 require!(full_period > 0, InvalidPeriod);
 
+                sol_log_64(
+                    amount,
+                    elapsed as u64,
+                    full_period as u64,
+                    now as u64,
+                    start_emission as u64,
+                );
+
                 mul_div(locker.deposited_amount, elapsed, full_period as u64)
                     .ok_or(ErrorCode::IntegerOverflow)?
                     .min(amount)
@@ -452,21 +460,8 @@ pub struct Locker {
     bump: u8,
 }
 
-impl Default for Locker {
-    fn default() -> Self {
-        Self {
-            owner: Default::default(),
-            creator: Default::default(),
-            current_unlock_date: Default::default(),
-            start_emission: Default::default(),
-            deposited_amount: Default::default(),
-            original_unlock_date: Default::default(),
-            vault: Default::default(),
-            vault_bump: Default::default(),
-            country_code: Default::default(),
-            bump: Default::default(),
-        }
-    }
+impl Locker {
+    pub const LEN: usize = std::mem::size_of::<Self>();
 }
 
 #[account]
@@ -525,7 +520,8 @@ pub struct CreateLocker<'info> {
             args.unlock_date.to_be_bytes().as_ref(),
             args.amount.to_be_bytes().as_ref(),
         ],
-        bump = args.locker_bump
+        bump = args.locker_bump,
+        space = Locker::LEN,
     )]
     locker: ProgramAccount<'info, Locker>,
     #[account(signer)]
@@ -672,6 +668,7 @@ pub struct SplitLocker<'info> {
             args.amount.to_be_bytes().as_ref()
         ],
         bump = args.locker_bump,
+        space = Locker::LEN,
     )]
     new_locker: ProgramAccount<'info, Locker>,
     new_owner: AccountInfo<'info>,
