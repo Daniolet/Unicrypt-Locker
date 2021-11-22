@@ -259,13 +259,13 @@ async function createLocker(provider, args, cluster) {
   return locker;
 }
 
-async function getLockers(provider, cluster, program) {
-  const program = initProgram(cluster, provider, program);
+async function getLockers(provider, cluster, programName) {
+  const program = initProgram(cluster, provider, programName);
   return await program.account.locker.all();
 }
 
-async function getLockersOwnedBy(provider, owner, cluster, program) {
-  const program = initProgram(cluster, provider, program);
+async function getLockersOwnedBy(provider, owner, cluster, programName) {
+  const program = initProgram(cluster, provider, programName);
   if (owner === undefined) {
     owner = provider.wallet.publicKey;
   }
