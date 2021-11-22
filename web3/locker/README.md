@@ -195,7 +195,7 @@ const client = new lockerClient.Client(provider, lockerClient.TOKEN_LOCKER, lock
 
 * `provider` -- as always
 * `lockerClient.TOKEN_LOCKER` or `lockerClient.LP_LOCKER`
-* `lockerClient.DEVNET` or `lockerClient.LOCALNET` -- the 3rd argument is irrelevant for now,
+* `lockerClient.DEVNET` or `lockerClient.LOCALNET` -- the 3rd argument is irrelevant for now;
 if omitted, `DEVNET` is the default
 
 The following methods use the same arguments as functions described above except the ones omitted.
