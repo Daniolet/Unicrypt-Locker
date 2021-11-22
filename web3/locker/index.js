@@ -19,9 +19,9 @@ const LP_LOCKER = 'lp-locker';
 
 class Client {
   constructor(provider, program, cluster) {
-    this.cluster = cluster === undefined ? DEVNET : cluster;
     this.provider = provider;
     program = program === undefined ? TOKEN_LOCKER : LP_LOCKER;
+    this.cluster = cluster === undefined ? DEVNET : cluster;
     this.program = initProgram(cluster, provider, program);
   }
   async findMintInfoAddress(mint) {
@@ -45,11 +45,22 @@ class Client {
   }
 
   async getLockers() {
-    return await getLockers(this.provider, this.cluster, this.program);
+    return await this.program.account.locker.all();
   }
 
   async getLockersOwnedBy(owner) {
-    return await getLockersOwnedBy(this.provider, owner, this.cluster, this.program);
+    if (owner === undefined) {
+      owner = this.provider.wallet.publicKey;
+    }
+    return await this.program.account.locker.all([
+      {
+        memcmp: {
+          // 8 bytes for discriminator
+          offset: 8,
+          bytes: owner.toBase58(),
+        },
+      },
+    ]);
   }
 
   async relock(args) {
