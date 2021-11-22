@@ -77,7 +77,8 @@ class Client {
   }
 }
 
-function initProgram(cluster, provider) {
+function initProgram(cluster, provider, program) {
+  program = program === undefined ? TOKEN_LOCKER : LP_LOCKER;
   switch (cluster) {
     case LOCALNET:
       return new anchor.Program(lockerIdl, tokenLockerIdLocalnet, provider);
