@@ -45,11 +45,11 @@ class Client {
   }
 
   async getLockers() {
-    return await getLockers(this.provider, this.cluster);
+    return await getLockers(this.provider, this.cluster, this.program);
   }
 
   async getLockersOwnedBy(owner) {
-    return await getLockersOwnedBy(this.provider, owner, this.cluster);
+    return await getLockersOwnedBy(this.provider, owner, this.cluster, this.program);
   }
 
   async relock(args) {
@@ -259,13 +259,13 @@ async function createLocker(provider, args, cluster) {
   return locker;
 }
 
-async function getLockers(provider, cluster) {
-  const program = initProgram(cluster, provider);
+async function getLockers(provider, cluster, program) {
+  const program = initProgram(cluster, provider, program);
   return await program.account.locker.all();
 }
 
-async function getLockersOwnedBy(provider, owner, cluster) {
-  const program = initProgram(cluster, provider);
+async function getLockersOwnedBy(provider, owner, cluster, program) {
+  const program = initProgram(cluster, provider, program);
   if (owner === undefined) {
     owner = provider.wallet.publicKey;
   }
