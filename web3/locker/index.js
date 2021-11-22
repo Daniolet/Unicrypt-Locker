@@ -20,9 +20,9 @@ const LP_LOCKER = 'lp-locker';
 class Client {
   constructor(provider, program, cluster) {
     this.provider = provider;
-    program = program === undefined ? TOKEN_LOCKER : LP_LOCKER;
     this.cluster = cluster === undefined ? DEVNET : cluster;
-    this.program = initProgram(cluster, provider, program);
+    program = program === undefined ? TOKEN_LOCKER : program;
+    this.program = initProgram(this.provider, this.cluster, program);
   }
   async findMintInfoAddress(mint) {
     return await findMintInfoAddress(this.program, mint);
@@ -88,8 +88,10 @@ class Client {
   }
 }
 
-function initProgram(cluster, provider, program) {
-  program = program === undefined ? TOKEN_LOCKER : LP_LOCKER;
+function initProgram(provider, cluster, program) {
+  program = program === undefined ? TOKEN_LOCKER : program;
+  cluster = cluster === undefined ? DEVNET : cluster;
+
   switch (cluster) {
     case LOCALNET:
       return new anchor.Program(lockerIdl, tokenLockerIdLocalnet, provider);
@@ -144,7 +146,7 @@ async function tryIfExists(program, account, address, found, notFound) {
 }
 
 async function isMintWhitelisted(provider, mint, cluster) {
-  const program = initProgram(cluster, provider);
+  const program = initProgram(provider, cluster);
   const [mintInfo, _bump] = await findMintInfoAddress(program, mint);
 
   return await tryIfExists(
@@ -179,7 +181,7 @@ async function getOrCreateMintInfo(program, mint, payer, config) {
 }
 
 async function vaultAuthorityAddress(provider, locker, cluster) {
-  const program = initProgram(cluster, provider);
+  const program = initProgram(provider, cluster);
   return await anchor.web3.PublicKey.createProgramAddress(
     [
       locker.publicKey.toBytes(),
@@ -190,7 +192,7 @@ async function vaultAuthorityAddress(provider, locker, cluster) {
 }
 
 async function createLocker(provider, args, cluster) {
-  const program = initProgram(cluster, provider);
+  const program = initProgram(provider, cluster);
 
   const [locker, lockerBump] = await anchor.web3.PublicKey.findProgramAddress(
     [
@@ -271,12 +273,12 @@ async function createLocker(provider, args, cluster) {
 }
 
 async function getLockers(provider, cluster, programName) {
-  const program = initProgram(cluster, provider, programName);
+  const program = initProgram(provider, cluster, programName);
   return await program.account.locker.all();
 }
 
 async function getLockersOwnedBy(provider, owner, cluster, programName) {
-  const program = initProgram(cluster, provider, programName);
+  const program = initProgram(provider, cluster, programName);
   if (owner === undefined) {
     owner = provider.wallet.publicKey;
   }
@@ -292,7 +294,7 @@ async function getLockersOwnedBy(provider, owner, cluster, programName) {
 }
 
 async function relock(provider, args, cluster) {
-  const program = initProgram(cluster, provider);
+  const program = initProgram(provider, cluster);
 
   return await program.rpc.relock(
     args.unlockDate,
@@ -306,7 +308,7 @@ async function relock(provider, args, cluster) {
 }
 
 async function transferOwnership(provider, args, cluster) {
-  const program = initProgram(cluster, provider);
+  const program = initProgram(provider, cluster);
 
   const rpcArgs = {
     accounts: {
@@ -324,7 +326,7 @@ async function transferOwnership(provider, args, cluster) {
 }
 
 async function incrementLock(provider, args, cluster) {
-  const program = initProgram(cluster, provider);
+  const program = initProgram(provider, cluster);
 
   const [config, _] = await findConfigAddress(program);
   const configAccount = await program.account.config.fetch(config);
@@ -361,7 +363,7 @@ async function incrementLock(provider, args, cluster) {
 }
 
 async function withdrawFunds(provider, args, cluster) {
-  const program = initProgram(cluster, provider);
+  const program = initProgram(provider, cluster);
 
   const vaultAuthority = await anchor.web3.PublicKey.createProgramAddress(
     [
@@ -404,7 +406,7 @@ async function withdrawFunds(provider, args, cluster) {
 }
 
 async function closeLocker(provider, args, cluster) {
-  const program = initProgram(cluster, provider);
+  const program = initProgram(provider, cluster);
 
   const vaultAuthority = await anchor.web3.PublicKey.createProgramAddress(
     [
@@ -432,7 +434,7 @@ async function closeLocker(provider, args, cluster) {
 }
 
 async function splitLocker(provider, args, cluster) {
-  const program = initProgram(cluster, provider);
+  const program = initProgram(provider, cluster);
 
   const oldVaultAuthority = await anchor.web3.PublicKey.createProgramAddress(
     [
