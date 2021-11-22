@@ -14,15 +14,6 @@ use az::CheckedAs;
 
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
-mod fee {
-    use super::*;
-
-    declare_id!("7vPbNKWdgS1dqx6ZnJR8dU9Mo6Tsgwp3S5rALuANwXiJ");
-
-    pub const FEE_SOL: u64 = 1 * solana_program::native_token::LAMPORTS_PER_SOL;
-    pub const FEE_PERMILLE: u64 = 35;
-}
-
 #[error]
 pub enum ErrorCode {
     #[msg("The given unlock date is in the past")]
@@ -38,14 +29,66 @@ pub enum ErrorCode {
     TooEarlyToWithdraw,
     InvalidAmount,
     InvalidCountry,
+    InitMintInfoNotAuthorized,
+    LinearEmissionDisabled,
 }
 
 #[program]
 pub mod locker {
     use super::*;
 
+    pub fn init_config(ctx: Context<InitConfig>, args: CreateConfigArgs) -> Result<()> {
+        let config = ctx.accounts.config.deref_mut();
+
+        *config = Config {
+            admin: ctx.accounts.admin.key(),
+            fee_in_sol: args.fee_in_sol,
+            fee_in_token_numerator: args.fee_in_token_numerator,
+            fee_in_token_denominator: args.fee_in_token_denominator,
+            mint_info_permissioned: args.mint_info_permissioned,
+            has_linear_emission: args.has_linear_emission,
+            fee_wallet: ctx.accounts.fee_wallet.key(),
+            country_list: ctx.accounts.country_list.key(),
+            bump: args.bump,
+        };
+
+        Ok(())
+    }
+
+    pub fn update_config(ctx: Context<UpdateConfig>, args: UpdateConfigArgs) -> Result<()> {
+        let config = &mut ctx.accounts.config;
+        let UpdateConfigArgs {
+            fee_in_sol,
+            fee_in_token_numerator,
+            fee_in_token_denominator,
+            mint_info_permissioned,
+            has_linear_emission,
+        } = args;
+
+        config.fee_in_sol = fee_in_sol.unwrap_or(config.fee_in_sol);
+        config.fee_in_token_numerator =
+            fee_in_token_numerator.unwrap_or(config.fee_in_token_numerator);
+        config.fee_in_token_denominator =
+            fee_in_token_denominator.unwrap_or(config.fee_in_token_denominator);
+        config.mint_info_permissioned =
+            mint_info_permissioned.unwrap_or(config.mint_info_permissioned);
+        config.has_linear_emission = has_linear_emission.unwrap_or(config.has_linear_emission);
+
+        config.fee_wallet = ctx.accounts.fee_wallet.key();
+        config.country_list = ctx.accounts.country_list.key();
+
+        Ok(())
+    }
+
     pub fn init_mint_info(ctx: Context<InitMintInfo>, bump: u8) -> Result<()> {
         let mint_info = ctx.accounts.mint_info.deref_mut();
+
+        if ctx.accounts.config.mint_info_permissioned {
+            require!(
+                ctx.accounts.payer.key() == ctx.accounts.config.admin,
+                InitMintInfoNotAuthorized
+            );
+        }
 
         *mint_info = MintInfo {
             bump,
@@ -55,11 +98,20 @@ pub mod locker {
         Ok(())
     }
 
-    pub fn create_locker(ctx: Context<CreateLocker>, args: CreateLockerArgs) -> Result<()> {
+    pub fn create_locker<'info>(
+        ctx: Context<'_, '_, '_, 'info, CreateLocker<'info>>,
+        args: CreateLockerArgs,
+    ) -> Result<()> {
         let now = ctx.accounts.clock.unix_timestamp;
         require!(args.unlock_date > now, UnlockInThePast);
         // prevents errors when timestamp entered as milliseconds
         require!(args.unlock_date < 10000000000, InvalidTimestamp);
+
+        let config = &ctx.accounts.config;
+
+        if !config.has_linear_emission {
+            require!(args.start_emission.is_none(), LinearEmissionDisabled);
+        }
 
         if let Some(start_emission) = args.start_emission {
             require!(args.unlock_date > start_emission, InvalidPeriod);
@@ -74,76 +126,34 @@ pub mod locker {
 
         let mint_info = &mut ctx.accounts.mint_info;
 
-        let (amount_before, amount_to_lock) = if args.fee_in_sol {
-            require!(ctx.accounts.fee_wallet.key() == fee::ID, InvalidFeeWallet);
-
-            ctx.accounts.owner.key().log();
-            ctx.accounts.fee_wallet.key().log();
-
-            if !mint_info.fee_paid {
-                solana_program::program::invoke(
-                    &solana_program::system_instruction::transfer(
-                        ctx.accounts.owner.to_account_info().key,
-                        ctx.accounts.fee_wallet.key,
-                        fee::FEE_SOL,
-                    ),
-                    &[
-                        ctx.accounts.owner.to_account_info(),
-                        ctx.accounts.fee_wallet.to_account_info(),
-                        ctx.accounts.system_program.to_account_info(),
-                    ],
-                )?;
-                mint_info.fee_paid = true;
+        if should_pay_in_sol(config, mint_info, args.fee_in_sol) {
+            FeeInSol {
+                fee_wallet: &ctx.accounts.fee_wallet,
+                payer: &ctx.accounts.owner,
+                config,
+                mint_info,
+                system_program: &ctx.accounts.system_program,
             }
+            .pay()?;
+        }
 
-            (ctx.accounts.funding_wallet.amount, args.amount)
+        let lock_fee = if should_pay_in_tokens(config, mint_info, args.fee_in_sol) {
+            let fee_wallet: Account<'info, TokenAccount> =
+                Account::try_from(&ctx.accounts.fee_wallet)?;
+            FeeInTokens {
+                config,
+                funding_wallet: &mut ctx.accounts.funding_wallet,
+                funding_wallet_authority: &ctx.accounts.funding_wallet_authority,
+                fee_wallet: &fee_wallet,
+                amount: args.amount,
+                token_program: &ctx.accounts.token_program,
+            }
+            .pay()?
         } else {
-            let associated_token_account =
-                get_associated_token_address(&fee::ID, &ctx.accounts.funding_wallet.mint);
-
-            require!(
-                associated_token_account == ctx.accounts.fee_wallet.key(),
-                InvalidFeeWallet
-            );
-
-            let amount_before = ctx.accounts.funding_wallet.amount;
-
-            let lock_fee =
-                mul_div(args.amount, fee::FEE_PERMILLE, 10000).ok_or(ErrorCode::IntegerOverflow)?;
-
-            ctx.accounts.funding_wallet.key().log();
-            ctx.accounts.fee_wallet.key().log();
-            ctx.accounts.funding_wallet_authority.key().log();
-
-            let cpi_ctx = CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.funding_wallet.to_account_info(),
-                    to: ctx.accounts.fee_wallet.to_account_info(),
-                    authority: ctx.accounts.funding_wallet_authority.to_account_info(),
-                },
-            );
-            token::transfer(cpi_ctx, lock_fee)?;
-
-            ctx.accounts.funding_wallet.reload()?;
-            let amount_after_fee = ctx.accounts.funding_wallet.amount;
-
-            sol_log_64(
-                args.amount,
-                amount_before,
-                lock_fee,
-                amount_after_fee,
-                args.amount - lock_fee,
-            );
-
-            require!(
-                amount_before - amount_after_fee == lock_fee,
-                InvalidAmountTransferred
-            );
-
-            (amount_after_fee, args.amount - lock_fee)
+            0
         };
 
+        let amount_to_lock = args.amount - lock_fee;
         require!(amount_to_lock > 0, NothingToLock);
 
         let locker = ctx.accounts.locker.deref_mut();
@@ -161,26 +171,15 @@ pub mod locker {
             bump: args.locker_bump,
         };
 
-        ctx.accounts.funding_wallet.key().log();
-        ctx.accounts.vault.key().log();
-        ctx.accounts.funding_wallet_authority.key().log();
-
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.funding_wallet.to_account_info(),
-                to: ctx.accounts.vault.to_account_info(),
-                authority: ctx.accounts.funding_wallet_authority.to_account_info(),
-            },
-        );
-        token::transfer(cpi_ctx, amount_to_lock)?;
-
-        ctx.accounts.funding_wallet.reload()?;
-        let amount_final = ctx.accounts.funding_wallet.amount;
-        require!(
-            amount_before - amount_final == amount_to_lock,
-            InvalidAmountTransferred
-        );
+        TokenTransfer {
+            amount: amount_to_lock,
+            from: &mut ctx.accounts.funding_wallet,
+            to: &ctx.accounts.vault,
+            authority: &ctx.accounts.funding_wallet_authority,
+            token_program: &ctx.accounts.token_program,
+            signers: None,
+        }
+        .make()?;
 
         Ok(())
     }
@@ -209,43 +208,41 @@ pub mod locker {
     pub fn increment_lock(ctx: Context<IncrementLock>, amount: u64) -> Result<()> {
         let locker = &mut ctx.accounts.locker;
         let mint_info = &ctx.accounts.mint_info;
+        let config = &ctx.accounts.config;
 
-        let amount_to_lock = if mint_info.fee_paid {
-            amount
-        } else {
-            let lock_fee =
-                mul_div(amount, fee::FEE_PERMILLE, 10000).ok_or(ErrorCode::IntegerOverflow)?;
+        // 3rd argument is false b/c we do not pay in sol here at all
+        let amount_to_lock = if should_pay_in_tokens(config, mint_info, false) {
+            let lock_fee = mul_div(
+                amount,
+                config.fee_in_token_numerator,
+                config.fee_in_token_denominator,
+            )
+            .ok_or(ErrorCode::IntegerOverflow)?;
 
-            let associated_token_account =
-                get_associated_token_address(&fee::ID, &ctx.accounts.funding_wallet.mint);
-
-            require!(
-                associated_token_account == ctx.accounts.fee_wallet.key(),
-                InvalidFeeWallet
-            );
-
-            let cpi_ctx = CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.funding_wallet.to_account_info(),
-                    to: ctx.accounts.fee_wallet.to_account_info(),
-                    authority: ctx.accounts.funding_wallet_authority.to_account_info(),
-                },
-            );
-            token::transfer(cpi_ctx, lock_fee)?;
+            FeeInTokens {
+                config,
+                funding_wallet: &mut ctx.accounts.funding_wallet,
+                funding_wallet_authority: &ctx.accounts.funding_wallet_authority,
+                fee_wallet: &ctx.accounts.fee_wallet,
+                amount: lock_fee,
+                token_program: &ctx.accounts.token_program,
+            }
+            .pay()?;
 
             amount - lock_fee
+        } else {
+            amount
         };
 
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.funding_wallet.to_account_info(),
-                to: ctx.accounts.vault.to_account_info(),
-                authority: ctx.accounts.funding_wallet_authority.to_account_info(),
-            },
-        );
-        token::transfer(cpi_ctx, amount_to_lock)?;
+        TokenTransfer {
+            amount: amount_to_lock,
+            from: &mut ctx.accounts.funding_wallet,
+            to: &ctx.accounts.vault,
+            authority: &ctx.accounts.funding_wallet_authority,
+            token_program: &ctx.accounts.token_program,
+            signers: None,
+        }
+        .make()?;
 
         locker.deposited_amount = locker
             .deposited_amount
@@ -288,37 +285,21 @@ pub mod locker {
         require!(amount_to_transfer > 0, InvalidAmount);
         require!(amount_to_transfer <= vault.amount, InvalidAmount);
 
-        let amount_before = vault.amount;
-
         let locker_key = locker.key();
         let seeds = &[locker_key.as_ref(), &[locker.vault_bump]];
-        let signer = &[&seeds[..]];
+        let signers = &[&seeds[..]];
 
-        let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: vault.to_account_info(),
-                to: ctx.accounts.target_wallet.to_account_info(),
-                authority: ctx.accounts.vault_authority.to_account_info(),
-            },
-            signer,
-        );
-        token::transfer(cpi_ctx, amount_to_transfer)?;
+        TokenTransfer {
+            amount: amount_to_transfer,
+            from: vault,
+            to: &ctx.accounts.target_wallet,
+            authority: &ctx.accounts.vault_authority,
+            token_program: &ctx.accounts.token_program,
+            signers: Some(signers),
+        }
+        .make()?;
 
         vault.reload()?;
-        let amount_after = vault.amount;
-        sol_log_64(
-            amount,
-            amount_before,
-            amount_to_transfer,
-            amount_after,
-            amount_before - amount,
-        );
-        require!(
-            amount_before - amount_after == amount_to_transfer,
-            InvalidAmountTransferred
-        );
-
         if vault.amount == 0 {
             let cpi_ctx = CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
@@ -327,7 +308,7 @@ pub mod locker {
                     destination: ctx.accounts.owner.to_account_info(),
                     authority: ctx.accounts.vault_authority.to_account_info(),
                 },
-                signer,
+                signers,
             );
             token::close_account(cpi_ctx)?;
 
@@ -346,35 +327,26 @@ pub mod locker {
 
         require!(args.amount <= old_vault.amount, InvalidAmount);
 
-        let amount_before = old_vault.amount;
-
         let locker_key = old_locker.key();
         let seeds = &[locker_key.as_ref(), &[old_locker.vault_bump]];
-        let signer = &[&seeds[..]];
+        let signers = &[&seeds[..]];
 
-        let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: old_vault.to_account_info(),
-                to: ctx.accounts.new_vault.to_account_info(),
-                authority: ctx.accounts.old_vault_authority.to_account_info(),
-            },
-            signer,
-        );
-        token::transfer(cpi_ctx, args.amount)?;
-
-        old_vault.reload()?;
-        let amount_after = old_vault.amount;
-        require!(
-            amount_before - amount_after == args.amount,
-            InvalidAmountTransferred
-        );
+        TokenTransfer {
+            amount: args.amount,
+            from: old_vault,
+            to: &ctx.accounts.new_vault,
+            authority: &ctx.accounts.old_vault_authority,
+            token_program: &ctx.accounts.token_program,
+            signers: Some(signers),
+        }
+        .make()?;
 
         old_locker.deposited_amount = old_locker
             .deposited_amount
             .checked_sub(args.amount)
             .ok_or(ErrorCode::IntegerOverflow)?;
 
+        old_vault.reload()?;
         if old_vault.amount == 0 {
             let cpi_ctx = CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
@@ -383,7 +355,7 @@ pub mod locker {
                     destination: ctx.accounts.old_owner.to_account_info(),
                     authority: ctx.accounts.old_vault_authority.to_account_info(),
                 },
-                signer,
+                signers,
             );
             token::close_account(cpi_ctx)?;
 
@@ -412,21 +384,17 @@ pub mod locker {
 
         let locker_key = locker.key();
         let seeds = &[locker_key.as_ref(), &[locker.vault_bump]];
-        let signer = &[&seeds[..]];
+        let signers = &[&seeds[..]];
 
-        let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: vault.to_account_info(),
-                to: ctx.accounts.target_wallet.to_account_info(),
-                authority: ctx.accounts.vault_authority.to_account_info(),
-            },
-            signer,
-        );
-        token::transfer(cpi_ctx, vault.amount)?;
-
-        vault.reload()?;
-        require!(vault.amount == 0, InvalidAmountTransferred);
+        TokenTransfer {
+            amount: vault.amount,
+            from: vault,
+            to: &ctx.accounts.target_wallet,
+            authority: &ctx.accounts.vault_authority,
+            token_program: &ctx.accounts.token_program,
+            signers: Some(signers),
+        }
+        .make()?;
 
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
@@ -435,7 +403,7 @@ pub mod locker {
                 destination: ctx.accounts.owner.to_account_info(),
                 authority: ctx.accounts.vault_authority.to_account_info(),
             },
-            signer,
+            signers,
         );
         token::close_account(cpi_ctx)?;
 
@@ -443,6 +411,83 @@ pub mod locker {
 
         Ok(())
     }
+}
+
+#[account]
+#[derive(Debug)]
+pub struct Config {
+    admin: Pubkey,
+    fee_in_sol: u64,
+    fee_in_token_numerator: u64,
+    fee_in_token_denominator: u64,
+    mint_info_permissioned: bool,
+    has_linear_emission: bool,
+    fee_wallet: Pubkey,
+    country_list: Pubkey,
+    bump: u8,
+}
+
+impl Config {
+    pub const LEN: usize = 8 + std::mem::size_of::<Self>();
+}
+
+#[derive(AnchorDeserialize, AnchorSerialize)]
+pub struct CreateConfigArgs {
+    pub fee_in_sol: u64,
+    pub fee_in_token_numerator: u64,
+    pub fee_in_token_denominator: u64,
+    pub mint_info_permissioned: bool,
+    pub has_linear_emission: bool,
+    pub bump: u8,
+}
+
+#[derive(Accounts)]
+#[instruction(args: CreateConfigArgs)]
+pub struct InitConfig<'info> {
+    #[account(signer)]
+    admin: AccountInfo<'info>,
+    #[account(
+        init,
+        payer = admin,
+        seeds = [
+            "config".as_ref()
+        ],
+        bump = args.bump,
+        space = Config::LEN
+    )]
+    config: ProgramAccount<'info, Config>,
+    fee_wallet: AccountInfo<'info>,
+    country_list: Account<'info, country_list::CountryBanList>,
+
+    system_program: Program<'info, System>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct UpdateConfigArgs {
+    fee_in_sol: Option<u64>,
+    fee_in_token_numerator: Option<u64>,
+    fee_in_token_denominator: Option<u64>,
+    mint_info_permissioned: Option<bool>,
+    has_linear_emission: Option<bool>,
+}
+
+#[derive(Accounts)]
+#[instruction(args: UpdateConfigArgs)]
+pub struct UpdateConfig<'info> {
+    #[account(signer)]
+    admin: AccountInfo<'info>,
+    #[account(
+        mut,
+        seeds = [
+            "config".as_ref()
+        ],
+        bump = config.bump,
+        constraint = config.admin == admin.key()
+    )]
+    config: ProgramAccount<'info, Config>,
+
+    fee_wallet: AccountInfo<'info>,
+    country_list: Account<'info, country_list::CountryBanList>,
 }
 
 #[account]
@@ -461,7 +506,7 @@ pub struct Locker {
 }
 
 impl Locker {
-    pub const LEN: usize = std::mem::size_of::<Self>();
+    pub const LEN: usize = std::mem::size_of::<Self>() + 8;
 }
 
 #[account]
@@ -494,6 +539,7 @@ pub struct InitMintInfo<'info> {
     )]
     mint_info: ProgramAccount<'info, MintInfo>,
     mint: Account<'info, Mint>,
+    config: ProgramAccount<'info, Config>,
 
     system_program: Program<'info, System>,
 }
@@ -553,6 +599,10 @@ pub struct CreateLocker<'info> {
         bump = mint_info.bump
     )]
     mint_info: ProgramAccount<'info, MintInfo>,
+    config: ProgramAccount<'info, Config>,
+    #[account(
+        constraint = country_banlist.key() == config.country_list
+    )]
     country_banlist: Account<'info, country_list::CountryBanList>,
 
     clock: Sysvar<'info, Clock>,
@@ -605,7 +655,8 @@ pub struct IncrementLock<'info> {
     #[account(mut)]
     funding_wallet: Account<'info, TokenAccount>,
     #[account(mut)]
-    fee_wallet: AccountInfo<'info>,
+    fee_wallet: Account<'info, TokenAccount>,
+    config: ProgramAccount<'info, Config>,
 
     token_program: Program<'info, Token>,
 }
@@ -714,7 +765,7 @@ pub struct CloseLocker<'info> {
 }
 
 /// floor(a * b / denominator)
-fn mul_div<SrcA, SrcB, SrcD>(a: SrcA, b: SrcB, denominator: SrcD) -> Option<u64>
+pub fn mul_div<SrcA, SrcB, SrcD>(a: SrcA, b: SrcB, denominator: SrcD) -> Option<u64>
 where
     SrcA: fixed::traits::ToFixed,
     SrcB: fixed::traits::ToFixed,
@@ -729,4 +780,162 @@ where
     a.checked_mul(b)
         .and_then(|r| r.checked_div(denominator))
         .and_then(|r| r.floor().checked_as::<u64>())
+}
+
+fn should_pay_in_sol(config: &Config, mint_info: &MintInfo, fee_in_sol: bool) -> bool {
+    match (
+        config.mint_info_permissioned,
+        fee_in_sol,
+        mint_info.fee_paid,
+    ) {
+        // always paying
+        (true, _, _) => true,
+        // pay if pay in sol is chosen but no fee paid yet
+        (_, true, false) => true,
+        // do not pay in other cases
+        (_, _, _) => false,
+    }
+}
+
+fn should_pay_in_tokens(config: &Config, mint_info: &MintInfo, fee_in_sol: bool) -> bool {
+    match (
+        config.mint_info_permissioned,
+        fee_in_sol,
+        mint_info.fee_paid,
+    ) {
+        // always paying
+        (true, _, _) => true,
+        // pay if pay in sol is not chosen but no fee paid yet
+        (_, false, false) => true,
+        // do not pay in other cases
+        (_, _, _) => false,
+    }
+}
+
+struct FeeInSol<'pay, 'info> {
+    fee_wallet: &'pay AccountInfo<'info>,
+    payer: &'pay AccountInfo<'info>,
+    config: &'pay Config,
+    mint_info: &'pay mut MintInfo,
+    system_program: &'pay Program<'info, System>,
+}
+
+impl FeeInSol<'_, '_> {
+    fn pay(self) -> Result<()> {
+        require!(
+            self.fee_wallet.key() == self.config.fee_wallet,
+            InvalidFeeWallet
+        );
+
+        self.payer.key().log();
+        self.fee_wallet.key().log();
+
+        solana_program::program::invoke(
+            &solana_program::system_instruction::transfer(
+                self.payer.to_account_info().key,
+                self.fee_wallet.key,
+                self.config.fee_in_sol * solana_program::native_token::LAMPORTS_PER_SOL,
+            ),
+            &[
+                self.payer.to_account_info(),
+                self.fee_wallet.to_account_info(),
+                self.system_program.to_account_info(),
+            ],
+        )?;
+
+        // if not permissioned we allow one-time fees
+        if !self.config.mint_info_permissioned {
+            self.mint_info.fee_paid = true;
+        }
+
+        Ok(())
+    }
+}
+
+struct FeeInTokens<'pay, 'info> {
+    config: &'pay Config,
+    funding_wallet: &'pay mut Account<'info, TokenAccount>,
+    funding_wallet_authority: &'pay AccountInfo<'info>,
+    fee_wallet: &'pay Account<'info, TokenAccount>,
+    amount: u64,
+    token_program: &'pay Program<'info, Token>,
+}
+
+impl FeeInTokens<'_, '_> {
+    fn pay(self) -> Result<u64> {
+        let associated_token_account =
+            get_associated_token_address(&self.config.fee_wallet, &self.funding_wallet.mint);
+
+        require!(
+            associated_token_account == self.fee_wallet.key(),
+            InvalidFeeWallet
+        );
+
+        let lock_fee = mul_div(
+            self.amount,
+            self.config.fee_in_token_numerator,
+            self.config.fee_in_token_denominator,
+        )
+        .ok_or(ErrorCode::IntegerOverflow)?;
+
+        TokenTransfer {
+            amount: lock_fee,
+            from: self.funding_wallet,
+            to: self.fee_wallet,
+            authority: self.funding_wallet_authority,
+            token_program: self.token_program,
+            signers: None,
+        }
+        .make()?;
+
+        sol_log_64(self.amount, lock_fee, self.amount - lock_fee, 0, 0);
+
+        Ok(lock_fee)
+    }
+}
+
+struct TokenTransfer<'pay, 'info> {
+    amount: u64,
+    from: &'pay mut Account<'info, TokenAccount>,
+    to: &'pay Account<'info, TokenAccount>,
+    authority: &'pay AccountInfo<'info>,
+    token_program: &'pay Program<'info, Token>,
+    signers: Option<&'pay [&'pay [&'pay [u8]]]>,
+}
+
+impl TokenTransfer<'_, '_> {
+    fn make(self) -> Result<()> {
+        let amount_before = self.from.amount;
+
+        self.from.key().log();
+        self.to.key().log();
+        self.authority.key().log();
+
+        let cpi_ctx = CpiContext::new(
+            self.token_program.to_account_info(),
+            Transfer {
+                from: self.from.to_account_info(),
+                to: self.to.to_account_info(),
+                authority: self.authority.to_account_info(),
+            },
+        );
+        let cpi_ctx = match self.signers {
+            Some(signers) => cpi_ctx.with_signer(signers),
+            None => cpi_ctx,
+        };
+
+        token::transfer(cpi_ctx, self.amount)?;
+
+        self.from.reload()?;
+        let amount_after = self.from.amount;
+
+        sol_log_64(amount_before, amount_after, self.amount, 0, 0);
+
+        require!(
+            amount_before - amount_after == self.amount,
+            InvalidAmountTransferred
+        );
+
+        Ok(())
+    }
 }

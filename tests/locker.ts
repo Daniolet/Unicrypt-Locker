@@ -32,6 +32,8 @@ describe('locker', () => {
   const unlockDate = new anchor.BN(Date.now() / 1000 + 4);
   const newOwner = anchor.web3.Keypair.generate();
   const countryList = anchor.web3.Keypair.generate();
+  const feeWallet = new anchor.web3.PublicKey("7vPbNKWdgS1dqx6ZnJR8dU9Mo6Tsgwp3S5rALuANwXiJ");
+  const client = new lockerClient.Client(provider, lockerClient.TOKEN_LOCKER, lockerClient.LOCALNET);
 
   let
     mint: spl.Token,
@@ -59,23 +61,42 @@ describe('locker', () => {
       }
     );
 
+    const [config, configBump] = await client.findConfigAddress();
+
+    await program.rpc.initConfig(
+      {
+        feeInSol: new anchor.BN(1),
+        feeInTokenNumerator: new anchor.BN(35),
+        feeInTokenDenominator: new anchor.BN(10000),
+        mintInfoPermissioned: false,
+        hasLinearEmission: true,
+        bump: configBump
+      },
+      {
+        accounts: {
+          admin: provider.wallet.publicKey,
+          config,
+          feeWallet,
+          countryList: countryList.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        }
+      }
+    );
+
     await mint.mintTo(fundingWallet, provider.wallet.publicKey, [], 11000);
 
-    await lockerClient.createLocker(provider,
-      {
-        unlockDate,
-        countryCode: "RU",
-        startEmission: null,
-        amount: new anchor.BN(10000),
-        creator,
-        owner: creator,
-        fundingWalletAuthority: creator,
-        fundingWallet,
-        countryBanlist: countryList.publicKey,
-        feeInSol: true,
-      },
-      lockerClient.LOCALNET
-    );
+    await client.createLocker({
+      unlockDate,
+      countryCode: "RU",
+      startEmission: null,
+      amount: new anchor.BN(10000),
+      creator,
+      owner: creator,
+      fundingWalletAuthority: creator,
+      fundingWallet,
+      countryBanlist: countryList.publicKey,
+      feeInSol: true,
+    });
 
     const lockers = await program.account.locker.all();
 
@@ -92,7 +113,7 @@ describe('locker', () => {
     const fundingWalletAccount = await serumCmn.getTokenAccount(provider, fundingWallet);
     assert.ok(fundingWalletAccount.amount.eqn(1000));
 
-    assert.ok(await lockerClient.isMintWhitelisted(provider, mint.publicKey, lockerClient.LOCALNET));
+    assert.ok(await client.isMintWhitelisted(mint.publicKey));
 
     const vaultAccount = await serumCmn.getTokenAccount(provider, lockerAccount.account.vault);
     assert.ok(vaultAccount.amount.eqn(10000));
@@ -103,14 +124,11 @@ describe('locker', () => {
     const lockerAccount = lockers[0];
 
     assert.rejects(
-      async () => await lockerClient.withdrawFunds(provider,
-        {
-          amount: new anchor.BN(100),
-          locker: lockerAccount,
-          targetWallet: fundingWallet,
-        },
-        lockerClient.LOCALNET
-      ),
+      async () => await client.withdrawFunds({
+        amount: new anchor.BN(100),
+        locker: lockerAccount,
+        targetWallet: fundingWallet,
+      }),
       (err) => {
         assert.equal(err.code, 307);
         return true;
@@ -124,13 +142,10 @@ describe('locker', () => {
 
     const newUnlockDate = unlockDate.addn(1);
 
-    await lockerClient.relock(provider,
-      {
-        unlockDate: newUnlockDate,
-        locker: lockerAccountBefore,
-      },
-      lockerClient.LOCALNET
-    );
+    await client.relock({
+      unlockDate: newUnlockDate,
+      locker: lockerAccountBefore,
+    });
 
     const lockerAccountAfter = await program.account.locker.fetch(lockerAccountBefore.publicKey);
     assert.ok(!lockerAccountAfter.currentUnlockDate.eq(lockerAccountAfter.originalUnlockDate));
@@ -141,28 +156,22 @@ describe('locker', () => {
     const lockers = await program.account.locker.all();
     const lockerAccountBefore = lockers[0];
 
-    await lockerClient.transferOwnership(provider,
-      {
-        locker: lockerAccountBefore,
-        newOwner: newOwner.publicKey,
-      },
-      lockerClient.LOCALNET
-    );
+    await client.transferOwnership({
+      locker: lockerAccountBefore,
+      newOwner: newOwner.publicKey,
+    });
 
     const lockerAccountAfter = await program.account.locker.fetch(lockerAccountBefore.publicKey);
     assert.ok(lockerAccountAfter.owner.equals(newOwner.publicKey));
 
-    await lockerClient.transferOwnership(provider,
-      {
-        locker: {
-          publicKey: lockerAccountBefore.publicKey,
-          account: lockerAccountAfter,
-        },
-        newOwner: lockerAccountBefore.account.owner,
-        signers: [newOwner],
+    await client.transferOwnership({
+      locker: {
+        publicKey: lockerAccountBefore.publicKey,
+        account: lockerAccountAfter,
       },
-      lockerClient.LOCALNET
-    );
+      newOwner: lockerAccountBefore.account.owner,
+      signers: [newOwner],
+    });
 
     const lockerAccountFinal = await program.account.locker.fetch(lockerAccountBefore.publicKey);
     assert.ok(lockerAccountFinal.owner.equals(lockerAccountBefore.account.owner));
@@ -172,12 +181,12 @@ describe('locker', () => {
     const lockers = await program.account.locker.all();
     const lockerAccountBefore = lockers[0];
 
-    await lockerClient.incrementLock(provider, {
+    await client.incrementLock({
       amount: new anchor.BN(1000),
       locker: lockerAccountBefore,
       fundingWallet,
       fundingWalletAuthority: provider.wallet.publicKey,
-    }, lockerClient.LOCALNET)
+    });
 
     const lockerAccountFinal = await program.account.locker.fetch(lockerAccountBefore.publicKey);
     assert.ok(lockerAccountFinal.depositedAmount.eqn(11000));
@@ -189,16 +198,13 @@ describe('locker', () => {
 
     const amount = new anchor.BN(1000);
 
-    await lockerClient.splitLocker(provider,
-      {
-        amount,
-        locker,
-        newOwner: newOwner.publicKey,
-      },
-      lockerClient.LOCALNET
-    );
+    await client.splitLocker({
+      amount,
+      locker,
+      newOwner: newOwner.publicKey,
+    });
 
-    lockers = await lockerClient.getLockersOwnedBy(provider, newOwner.publicKey, lockerClient.LOCALNET);
+    lockers = await client.getLockersOwnedBy(newOwner.publicKey);
     const newLocker = lockers[0];
 
     assert.ok(newLocker.account.depositedAmount.eq(amount));
@@ -208,21 +214,19 @@ describe('locker', () => {
   });
 
   it('Withdraws the funds', async () => {
-    const lockers = await lockerClient.getLockersOwnedBy(provider, provider.wallet.publicKey, lockerClient.LOCALNET);
+    const lockers = await client.getLockersOwnedBy(provider.wallet.publicKey);
     const lockerAccount = lockers[0];
 
     const amount = new anchor.BN(1000);
 
     while (true) {
       try {
-        await lockerClient.withdrawFunds(provider, {
+        await client.withdrawFunds({
           amount,
           locker: lockerAccount,
           targetWallet: provider.wallet.publicKey,
           createAssociated: true,
-        },
-          lockerClient.LOCALNET
-        );
+        });
         break;
       } catch (err) {
         assert.equal(err.code, 308); // TooEarlyToWithdraw
@@ -238,14 +242,12 @@ describe('locker', () => {
     // 10000 - 1000 (gone in a split) - 1000 (withdraw amount)
     assert.ok(vaultWallet.amount.eqn(9000));
 
-    await lockerClient.withdrawFunds(provider, {
+    await client.withdrawFunds({
       amount: new anchor.BN(9000),
       locker: lockerAccount,
       targetWallet: provider.wallet.publicKey,
       createAssociated: true,
-    },
-      lockerClient.LOCALNET
-    );
+    });
 
     assert.rejects(
       async () => {
@@ -263,27 +265,24 @@ describe('locker', () => {
     const now = new anchor.BN(Date.now()).divn(1000);
     const unlockDate = now.addn(20);
 
-    const locker = await lockerClient.createLocker(provider,
-      {
-        unlockDate,
-        countryCode: "RU",
-        startEmission: now,
-        amount: new anchor.BN(1000),
-        creator,
-        owner: creator,
-        fundingWalletAuthority: creator,
-        fundingWallet,
-        countryBanlist: countryList.publicKey,
-        feeInSol: true,
-      },
-      lockerClient.LOCALNET
-    );
+    const locker = await client.createLocker({
+      unlockDate,
+      countryCode: "RU",
+      startEmission: now,
+      amount: new anchor.BN(1000),
+      creator,
+      owner: creator,
+      fundingWalletAuthority: creator,
+      fundingWallet,
+      countryBanlist: countryList.publicKey,
+      feeInSol: true,
+    });
 
     await lockerClient.utils.sleep(5000);
 
     let lockerAccount = await program.account.locker.fetch(locker);
 
-    await lockerClient.withdrawFunds(provider, {
+    await client.withdrawFunds({
       amount: new anchor.BN(900), // some number, it will not play any role at all
       locker: {
         publicKey: locker,
@@ -291,9 +290,7 @@ describe('locker', () => {
       },
       targetWallet: fundingWallet,
       createAssociated: false,
-    },
-      lockerClient.LOCALNET
-    );
+    });
 
     const fundingWalletAccount = await serumCmn.getTokenAccount(provider, fundingWallet);
     // should be 250 but it's hard to guarantee the exact value

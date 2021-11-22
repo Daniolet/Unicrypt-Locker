@@ -3,6 +3,77 @@
   "name": "locker",
   "instructions": [
     {
+      "name": "initConfig",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "config",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "feeWallet",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "countryList",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": "CreateConfigArgs"
+          }
+        }
+      ]
+    },
+    {
+      "name": "updateConfig",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "config",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "feeWallet",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "countryList",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": "UpdateConfigArgs"
+          }
+        }
+      ]
+    },
+    {
       "name": "initMintInfo",
       "accounts": [
         {
@@ -17,6 +88,11 @@
         },
         {
           "name": "mint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "config",
           "isMut": false,
           "isSigner": false
         },
@@ -79,6 +155,11 @@
         {
           "name": "mintInfo",
           "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "config",
+          "isMut": false,
           "isSigner": false
         },
         {
@@ -184,6 +265,11 @@
         {
           "name": "feeWallet",
           "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "config",
+          "isMut": false,
           "isSigner": false
         },
         {
@@ -347,6 +433,50 @@
   ],
   "accounts": [
     {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "publicKey"
+          },
+          {
+            "name": "feeInSol",
+            "type": "u64"
+          },
+          {
+            "name": "feeInTokenNumerator",
+            "type": "u64"
+          },
+          {
+            "name": "feeInTokenDenominator",
+            "type": "u64"
+          },
+          {
+            "name": "mintInfoPermissioned",
+            "type": "bool"
+          },
+          {
+            "name": "hasLinearEmission",
+            "type": "bool"
+          },
+          {
+            "name": "feeWallet",
+            "type": "publicKey"
+          },
+          {
+            "name": "countryList",
+            "type": "publicKey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "Locker",
       "type": {
         "kind": "struct",
@@ -419,6 +549,76 @@
     }
   ],
   "types": [
+    {
+      "name": "CreateConfigArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "feeInSol",
+            "type": "u64"
+          },
+          {
+            "name": "feeInTokenNumerator",
+            "type": "u64"
+          },
+          {
+            "name": "feeInTokenDenominator",
+            "type": "u64"
+          },
+          {
+            "name": "mintInfoPermissioned",
+            "type": "bool"
+          },
+          {
+            "name": "hasLinearEmission",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UpdateConfigArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "feeInSol",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "feeInTokenNumerator",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "feeInTokenDenominator",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "mintInfoPermissioned",
+            "type": {
+              "option": "bool"
+            }
+          },
+          {
+            "name": "hasLinearEmission",
+            "type": {
+              "option": "bool"
+            }
+          }
+        ]
+      }
+    },
     {
       "name": "CreateLockerArgs",
       "type": {
@@ -524,6 +724,14 @@
     {
       "code": 310,
       "name": "InvalidCountry"
+    },
+    {
+      "code": 311,
+      "name": "InitMintInfoNotAuthorized"
+    },
+    {
+      "code": 312,
+      "name": "LinearEmissionDisabled"
     }
   ],
   "metadata": {
