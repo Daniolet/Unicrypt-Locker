@@ -1,6 +1,6 @@
 [package]
 edition = "2018"
-name = "country-list-cli"
+name = "admin-cli"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -16,3 +16,4 @@ structopt = "0.3"
 csv = "1.1"
 
 country-list = {path = "../../programs/country-list", features = ["no-entrypoint"]}
+locker = {path = "../../programs/locker", features = ["no-entrypoint"]}

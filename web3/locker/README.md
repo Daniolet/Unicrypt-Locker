@@ -185,3 +185,29 @@ Returns simple boolean.
 
 * `provider` -- as always
 * `locker` -- as returned from `getLockers`
+
+## Client object
+
+```js
+const lockerClient = require('unicrypt-locker');
+const client = new lockerClient.Client(provider, lockerClient.TOKEN_LOCKER, lockerClient.DEVNET);
+```
+
+* `provider` -- as always
+* `lockerClient.TOKEN_LOCKER` or `lockerClient.LP_LOCKER`
+* `lockerClient.DEVNET` or `lockerClient.LOCALNET` -- the 3rd argument is irrelevant for now,
+if omitted, `DEVNET` is the default
+
+The following methods use the same arguments as functions described above except the ones omitted.
+
+- `client.createLocker(args)`
+- `client.getLockers()`
+- `client.getLockersOwnerBy(owner)`
+- `client.relock(unlockDate)`
+- `client.transferOwnership(args)`
+- `client.incrementLock(args)`
+- `client.withdrawFunds(args)`
+- `client.splitLocker(args)`
+- `client.closeLocker(args)`
+- `client.isMintWhitelisted(mint)`
+- `client.vaultAuthorityAddress(locker)`

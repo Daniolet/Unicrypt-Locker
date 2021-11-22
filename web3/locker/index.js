@@ -6,36 +6,92 @@ const utils = require('./utils');
 
 const lockerIdl = require('./locker.json');
 const lockerIdlDevnet = require('./locker.devnet.json');
+const lpLockerIdlDevnet = require('./lp-locker.devnet.json');
 
-const programIdLocalnet = new solana_web3.PublicKey(lockerIdl.metadata.address);
-const programIdDevnet = new solana_web3.PublicKey(lockerIdlDevnet.metadata.address);
-
-const countryListDevnet = new solana_web3.PublicKey("GkHZ3qzHwRZ4TrGQT57SgBNv4MsygBPaZzPmFu2757Vx");
-
-const feeWallet = new anchor.web3.PublicKey("7vPbNKWdgS1dqx6ZnJR8dU9Mo6Tsgwp3S5rALuANwXiJ");
+const tokenLockerIdLocalnet = new solana_web3.PublicKey(lockerIdl.metadata.address);
+const tokenLockerIdDevnet = new solana_web3.PublicKey(lockerIdlDevnet.metadata.address);
+const lpLockerIdDevnet = new solana_web3.PublicKey(lpLockerIdlDevnet.metadata.address);
 
 const LOCALNET = 'localnet';
 const DEVNET = 'devnet';
+const TOKEN_LOCKER = 'token-locker';
+const LP_LOCKER = 'lp-locker';
+
+class Client {
+  constructor(provider, program, cluster) {
+    this.cluster = cluster === undefined ? DEVNET : cluster;
+    this.provider = provider;
+    program = program === undefined ? TOKEN_LOCKER : LP_LOCKER;
+    this.program = initProgram(cluster, provider, program);
+  }
+  async findMintInfoAddress(mint) {
+    return await findMintInfoAddress(this.program, mint);
+  }
+
+  async findConfigAddress() {
+    return await findConfigAddress(this.program);
+  }
+
+  async vaultAuthorityAddress(locker) {
+    return await vaultAuthorityAddress(this.provider, locker, this.cluster);
+  }
+
+  async isMintWhitelisted(mint) {
+    return await isMintWhitelisted(this.provider, mint, this.cluster);
+  }
+
+  async createLocker(args) {
+    return await createLocker(this.provider, args, this.cluster);
+  }
+
+  async getLockers() {
+    return await getLockers(this.provider, this.cluster);
+  }
+
+  async getLockersOwnedBy(owner) {
+    return await getLockersOwnedBy(this.provider, owner, this.cluster);
+  }
+
+  async relock(args) {
+    return await relock(this.provider, args, this.cluster);
+  }
+
+  async transferOwnership(args) {
+    return await transferOwnership(this.provider, args, this.cluster);
+  }
+
+  async incrementLock(args) {
+    return await incrementLock(this.provider, args, this.cluster);
+  }
+
+  async withdrawFunds(args) {
+    return await withdrawFunds(this.provider, args, this.cluster);
+  }
+
+  async closeLocker(args) {
+    return await closeLocker(this.provider, args, this.cluster);
+  }
+
+  async splitLocker(args) {
+    return await splitLocker(this.provider, args, this.cluster);
+  }
+}
 
 function initProgram(cluster, provider) {
   switch (cluster) {
     case LOCALNET:
-      return new anchor.Program(lockerIdl, programIdLocalnet, provider);
+      return new anchor.Program(lockerIdl, tokenLockerIdLocalnet, provider);
 
     case DEVNET:
     default:
-      return new anchor.Program(lockerIdlDevnet, programIdDevnet, provider);
-  }
-}
+      switch (program) {
+        case LP_LOCKER:
+          return new anchor.Program(lpLockerIdlDevnet, lpLockerIdDevnet, provider);
 
-function getCountryList(cluster) {
-  switch (cluster) {
-    case LOCALNET:
-      return undefined;
-
-    case DEVNET:
-    default:
-      return countryListDevnet;
+        case TOKEN_LOCKER:
+        default:
+          return new anchor.Program(lockerIdlDevnet, tokenLockerIdDevnet, provider);
+      }
   }
 }
 
@@ -47,6 +103,16 @@ async function findMintInfoAddress(program, mint) {
     program.programId
   );
   return [mintInfo, bump];
+}
+
+async function findConfigAddress(program) {
+  const [config, bump] = await anchor.web3.PublicKey.findProgramAddress(
+    [
+      new TextEncoder().encode("config")
+    ],
+    program.programId
+  );
+  return [config, bump];
 }
 
 const FAILED_TO_FIND_ACCOUNT = "Account does not exist";
@@ -76,7 +142,7 @@ async function isMintWhitelisted(provider, mint, cluster) {
   );
 }
 
-async function getOrCreateMintInfo(program, mint, payer) {
+async function getOrCreateMintInfo(program, mint, payer, config) {
   const [mintInfo, bump] = await findMintInfoAddress(program, mint);
 
   return await tryIfExists(
@@ -90,6 +156,7 @@ async function getOrCreateMintInfo(program, mint, payer) {
             payer,
             mintInfo,
             mint,
+            config,
             systemProgram: anchor.web3.SystemProgram.programId,
           }
         }
@@ -138,17 +205,20 @@ async function createLocker(provider, args, cluster) {
     vaultAuthority
   );
 
+  const [config, _] = await findConfigAddress(program);
+  const configAccount = await program.account.config.fetch(config);
+
   const [mintInfo, initMintInfoInstrs] = await getOrCreateMintInfo(
     program,
     fundingWalletAccount.mint,
-    args.creator
+    args.creator,
+    config
   );
   const [feeTokenWallet, createAssociatedTokenAccountInstrs] = await utils.getOrCreateAssociatedTokenAccountInstrs(
-    provider, fundingWalletAccount.mint, feeWallet
+    provider, fundingWalletAccount.mint, configAccount.feeWallet
   );
 
-  const finalFeeWallet = args.feeInSol ? feeWallet : feeTokenWallet;
-  const countryBanlist = args.countryBanlist === undefined ? getCountryList(cluster) : args.countryBanlist;
+  const finalFeeWallet = args.feeInSol ? configAccount.feeWallet : feeTokenWallet;
 
   await program.rpc.createLocker(
     {
@@ -171,7 +241,8 @@ async function createLocker(provider, args, cluster) {
         fundingWallet: args.fundingWallet,
         feeWallet: finalFeeWallet,
         mintInfo,
-        countryBanlist,
+        countryBanlist: configAccount.countryList,
+        config,
 
         clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
         systemProgram: anchor.web3.SystemProgram.programId,
@@ -243,6 +314,9 @@ async function transferOwnership(provider, args, cluster) {
 async function incrementLock(provider, args, cluster) {
   const program = initProgram(cluster, provider);
 
+  const [config, _] = await findConfigAddress(program);
+  const configAccount = await program.account.config.fetch(config);
+
   const fundingWalletAccount = await serumCmn.getTokenAccount(provider, args.fundingWallet);
   const [mintInfo, initMintInfoInstrs] = await getOrCreateMintInfo(
     program,
@@ -250,7 +324,7 @@ async function incrementLock(provider, args, cluster) {
     args.fundingWalletAuthority
   );
   const [feeTokenWallet, createAssociatedTokenAccountInstrs] = await utils.getOrCreateAssociatedTokenAccountInstrs(
-    provider, fundingWalletAccount.mint, feeWallet
+    provider, fundingWalletAccount.mint, configAccount.feeWallet
   );
 
   await program.rpc.incrementLock(
@@ -264,6 +338,7 @@ async function incrementLock(provider, args, cluster) {
         feeWallet: feeTokenWallet,
         tokenProgram: utils.TOKEN_PROGRAM_ID,
         mintInfo,
+        config
       },
       instructions: initMintInfoInstrs
         .concat(createAssociatedTokenAccountInstrs)
@@ -412,7 +487,11 @@ async function splitLocker(provider, args, cluster) {
 module.exports = {
   LOCALNET,
   DEVNET,
+  LP_LOCKER,
+  TOKEN_LOCKER,
+  Client,
   findMintInfoAddress,
+  findConfigAddress,
   vaultAuthorityAddress,
   isMintWhitelisted,
   createLocker,
@@ -424,6 +503,5 @@ module.exports = {
   withdrawFunds,
   closeLocker,
   splitLocker,
-  feeWallet,
   utils,
 };
