@@ -18,11 +18,12 @@ const TOKEN_LOCKER = 'token-locker';
 const LP_LOCKER = 'lp-locker';
 
 class Client {
-  constructor(provider, program, cluster) {
+  constructor(provider, programName, cluster) {
     this.provider = provider;
     this.cluster = cluster === undefined ? DEVNET : cluster;
-    program = program === undefined ? TOKEN_LOCKER : program;
-    this.program = initProgram(this.provider, this.cluster, program);
+    programName = programName === undefined ? TOKEN_LOCKER : programName;
+    this.programName = programName;
+    this.program = initProgram(this.provider, this.cluster, programName);
   }
   async findMintInfoAddress(mint) {
     return await findMintInfoAddress(this.program, mint);
@@ -38,6 +39,20 @@ class Client {
 
   async isMintWhitelisted(mint) {
     return await isMintWhitelisted(this.provider, mint, this.cluster);
+  }
+
+  async isTokenAccepted(mint) {
+    if (this.program.programName == TOKEN_LOCKER) {
+      return true;
+    } else {
+      const [mintInfo, _bump] = await this.findMintInfoAddress(mint);
+
+      return await tryIfExists(
+        this.program, "mintInfo", mintInfo,
+        (_mintInfoAccount) => true,
+        () => false,
+      );
+    }
   }
 
   async createLocker(args) {
