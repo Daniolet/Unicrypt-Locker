@@ -1,109 +1,203 @@
+## NPM package
+
+The client is available as NPM package from git repo --
+https://gitlab.cryptozaurus.com/unicrypt/unicrypt-locker
+
+Note that you need an access as it's private repository.
+
+You can add the package this way, for example:
+
+```json
+{
+   "repository": {
+      "type": "git",
+      // note that we're using ssh here to ease
+      // repo download
+      "url": "ssh://git@gitlab.cryptozaurus.com:3022/unicrypt/unicrypt-locker.git",
+      "directory": "web3/locker"
+  }
+}
+```
+
+It's possible to just publish it to NPM but that requires to consider the NDA issues.
+
+## Glossary
+
+* *mint* -- SPL token address. It's the address of token (or mint) **itself**.
+* *SPL token account* -- SPL token account address. It's the address of concrete
+wallet with some SPL tokens.
+
+```bash
+# address of some token account
+$  spl-token account-info --address 3JAXHLUKqwnDHSaB3eJ5LgtzwRZWD8pDH4s7pqVcMnCe
+
+Address: 3JAXHLUKqwnDHSaB3eJ5LgtzwRZWD8pDH4s7pqVcMnCe # <-- this is token account
+Balance: 100
+Mint: 7Sh6EPaEuMrd1Acrdb5MRF3Kf4aA6N329FmJeFJbcogy # <-- this is mint
+Owner: 9VL5TQfvHsSdCSQdLDWEvTUfUbLdUr8qH2AUsWpU9C4o
+State: Initialized
+Delegation: (not set)
+Close authority: (not set)
+```
+
+## Provider and Client setup
+
+```js
+// there are packages for vue etc
+import { useWallet } from '@solana/wallet-adapter-react';
+// this is our client package
+import * as locker from 'unicrypt-locker';
+
+// ask user to connect some wallet (Phantom or something else)
+const wallet = useWallet();
+
+function getProvider() {
+  const opts = {
+    preflightCommitment: "processed",
+  };
+  // change it to https://api.devnet.solana.com to connect
+  // to devnet and so on
+  const network = "http://127.0.0.1:8899";
+  const connection = new Connection(network, opts.preflightCommitment);
+
+  // using provided wallet
+  const provider = new Provider(
+      connection, wallet, opts.preflightCommitment
+  );
+  return provider;
+}
+
+const provider = getProvider();
+// we want to connect to token locker program on devnet
+// you can use locker.LP_LOCKER to connect to lp locker program
+const client = new locker.Client(provider, locker.TOKEN_LOCKER, locker.DEVNET);
+```
+
+
 ## Create Locker
 
 ```js
-const lockerClient = require('unicrypt-locker');
-
 const creator = provider.wallet.publicKey;
 
-await lockerClient.createLocker(provider, {
-      unlockDate: new anchor.BN(Date.now() + 20),
-      countryCode: 54,
-      startEmission: null,
-      amount: new anchor.BN(10000),
-      creator,
-      owner: creator,
-      fundingWalletAuthority: creator,
-      fundingWallet,
-      feeInSol: true,
-    });
+await client.createLocker({
+    // Date.now() returns timestamp in milliseconds
+    // but we need the value in seconds
+    unlockDate: new anchor.BN(Date.now() / 1000 + 20),
+    countryCode: "RU",
+    startEmission: null,
+    amount: new anchor.BN(10000),
+    creator,
+    owner: creator,
+    fundingWalletAuthority: creator,
+    fundingWallet,
+    feeInSol: true,
+});
 ```
 
-`createLocker(provider, args)`
+`client.createLocker(args)` -- creates locker with specified amount and unlock date.
+Returns the address of newly created locker.
 
-* `provider` -- anchor web3 provider
+> If you use LP locker, you can use only accepted tokens.
+> You can check if token is accepted by calling method `isTokenAccepted(mint)`.
+
 * `args`:
 
 ```js
 {
-    // unix timestamp (seconds!) of type anchor.BN
+    // Unix timestamp (seconds!) of type anchor.BN.
     unlockDate,
-    // 2 letter country code ("RU", "UK" etc)
+    // 2 letter country code ("RU", "UK" etc).
+    // List of codes in the repo -- Country List.csv
     countryCode,
-    // null for now
+    // Unix timestamp in seconds of type anchor.BN *or* null.
+    // Setting this value allows the users to withdraw funds before
+    // unlock date linearly.
+    // LP locker should always have null -- program will fail if there's some value.
     startEmission,
-    // amount to lock of type anchor.BN
+    // Amount to lock of type anchor.BN. There will be fee if:
+    // * you use LP locker;
+    // * you use Token locker and the mint is not whitelisted. You can check
+    //   if the mint is whitelisted by calling method `client.isMintWhitelisted(mint)`.
     amount,
-    // provider.wallet.publicKey
+    // `anchor.web3.PublicKey` of creator of this locker. It should be
+    // a signer too, so it's preferrable to use `provider.wallet.publicKey`.
     creator,
-    // public key of locker owner
-    // (provider.wallet.publicKey in the simplest case)
+    // `anchor.web3.PublicKey` of locker owner. It can be anyone, so it's
+    // not required for creator and owner to be the same account.
+    // The signature of owner is not required too.
+    // `provider.wallet.publicKey` as `owner` is the simplest case.
     owner,
-    // public key of funding wallet owner
-    // (provider.wallet.publicKey in the simplest case)
+    // `anchor.web3.PublicKey` of funding wallet owner.
+    // It should sign the transaction, so it's better to use
+    // `provider.wallet.publicKey`.
     fundingWalletAuthority,
-    // address of source SPL token account
+    // `anchor.web.PublicKey` of SPL token account from which
+    // the locker will be funded. The amount of tokens you
+    // specified earlier will be transferred from this account
+    // to some program-controlled vault.
     fundingWallet,
-    // boolean: if true then fee is paid in SOL,
-    // else paid in locked token
-    // if token is already whitelisted it's better to set this to true
-    // to avoid any fees
+    // `boolean`: if true then fee is paid in SOL,
+    // else paid in locked token.
+    // If token is already whitelisted it's better to set this to true
+    // to avoid any fees.
     feeInSol,
 }
 ```
 
 ## Get Lockers
 
-`getLockers(provider)` -- returns created lockers.
+`client.getLockers()` -- returns created lockers.
+`client.getLockersOwnerBy(owner)` -- returns lockers owned by specific account.
 
-* `provider` -- anchor web3 provider
-
-`getLockersOwnerBy(provider, owner)` -- returns lockers owned by specific account.
-
-* `provider` -- anchor web3 provider
 * `owner` -- account public key
 
 ## Relock
 
-`relock(provider, unlockDate)`
+`client.relock(unlockDate)` -- relocks the locker to some date that should be
+later than the original one.
 
-* `provider` -- anchor web3 provider
-* `unlockDate` -- new unlock date
-    - should be later than original one
-    - anchor.BN
+* `unlockDate` -- new unlock date:
+    - should be later than original one;
+    - type is anchor.BN;
+    - unix timestamp in seconds!
 
 ## Transfer Ownership
 
-`transferOwnership(provider, args)`
+`client.transferOwnership(args)` -- transfer the ownership of specified
+locker to someone else.
 
-* `provider` -- anchor web3 provider
 * `args`:
 
 ```js
 {
-    // Locker account as returned from `getLockers`
+    // Locker account as returned from `getLockers`.
     locker,
-    // Public key of a new owner
+    // `anchor.web3.PublicKey` of a new owner.
     newOwner,
 }
 ```
 
 ## Increment Lock
 
-`incrementLock(provider, args)`
+`client.incrementLock(args)` -- add more tokens to locker. It's cheaper than
+creation new locker.
 
-* `provider` -- anchor web3 provider
 * `args`:
 
 ```js
 {
-    // Locker account as returned from `getLockers`
+    // Locker account as returned from `getLockers`.
     locker,
-    // Amount to lock. anchor.BN
+    // Amount to lock as `anchor.BN`.
     amount,
-    // public key of funding wallet owner
-    // (provider.wallet.publicKey in the simplest case)
+    // `anchor.web3.PublicKey` of funding wallet owner.
+    // It should sign the transaction, so it's better to use
+    // `provider.wallet.publicKey`.
     fundingWalletAuthority,
-    // address of source SPL token account
+    // `anchor.web.PublicKey` of SPL token account from which
+    // the locker will be funded. The amount of tokens you
+    // specified earlier will be transferred from this account
+    // to some program-controlled vault.
     fundingWallet,
 }
 ```
@@ -111,60 +205,69 @@ await lockerClient.createLocker(provider, {
 
 ## Withdraw Funds
 
-`withdrawFunds(provider, args)`
+`client.withdrawFunds(args)` -- withdraw the funds from locker.
+Returns resulting `targetWallet` (associated or original).
 
-* `provider` -- anchor web3 provider
+If there's `startEmission` specified, you can withdraw funds linearly
+in the period from `startEmission` to `unlockDate` -- it's called linear
+emission.
+
+If there's no linear emission available, you should wait till the `unlockDate`.
+
+There's **NO** linear emission for LP lockers.
+
 * `args`:
 
 ```js
 {
-    // Amount to withdraw. anchor.BN
+    // Amount to withdraw as `anchor.BN`.
     amount,
-    // Locker account as returned from `getLockers`
+    // Locker account as returned from `getLockers`.
     locker,
-    // if true, `targetWallet` should ordinary account public key like provider.wallet.publicKey
-    // if not, `targetWallet` should an SPL token account
+    // `boolean`. Flag specified if the transaction should use associated token
+    // account if it's exists (or create the one if it's not).
+    // If set to `true`, `targetWallet` should be ordinary account public key
+    // (for example, `provider.wallet.publicKey`).
+    // If set to `false`, `targetWallet` should be an SPL token account. In this
+    // case no associated token account will be created. It's useful if the user
+    // already has some token account.
     createAssociated,
-    // Public key of a wallet to transfer tokens to
-    // if `createAssociated`, then associated SPL token account will be
-    // created for this ordinary solana account
-    // if not, it should SPL token account
+    // `anchor.web.PublicKey` of a wallet to transfer tokens to.
+    // If `createAssociated` is set to `true`, then associated SPL token account
+    // will be created for this ordinary Solana account.
+    // If `createAssociated` set to `false`, it should be SPL token account.
     targetWallet,
 }
 ```
 
-Returns resulting targetWallet (associated or original).
-
 ## Split the Locker
 
-`splitLocker(provider, args)`
+`client.splitLocker(args)` -- splits the locker into two parts.
 
-* `provider` -- anchor web3 provider
 * `args`:
 
 ```js
 {
-    // Amount to deposit in a new locker. anchor.BN
+    // Amount to deposit in a new locker as `anchor.BN`.
     amount,
-    // Locker account as returned from `getLockers`
+    // Locker account as returned from `getLockers`.
     locker,
-    // Public key of a new owner
+    // `anchor.web.PublicKey` of a new owner.
     newOwner,
 }
 ```
 
 ## Close locker (for tests only!)
 
-`closeLocker(provider, args)`
+`client.closeLocker(args)`
 
-* `provider` -- anchor web3 provider
 * `args`:
 
 ```js
 {
-    // Locker account as returned from `getLockers`
+    // Locker account as returned from `getLockers`.
     locker,
-    // Public key of a wallet to transfer tokens to
+    // `anchor.web.PublicKey` of a wallet to transfer tokens to.
     // Should be an SPL token account!
     targetWallet,
 }
@@ -172,42 +275,23 @@ Returns resulting targetWallet (associated or original).
 
 ## Check if token is already whitelisted
 
-`isMintWhitelisted(provider, mint)`
+`client.isMintWhitelisted(mint)` -- if the mint is whitelisted, it's
+possible to create new lockers without any fees.
 
-* `provider` -- as always
-* `mint` -- token public key
+* `mint` -- SPL token `anchor.web.PublicKey`
 
 Returns simple boolean.
 
-## Find vault authority (owner) address
+## Find vault authority address
 
-`vaultAuthorityAddress(provider, locker)`
+`client.vaultAuthorityAddress(locker)` -- returns vault authority for
+given locker.
 
-* `provider` -- as always
-* `locker` -- as returned from `getLockers`
+* `locker` -- as returned from `getLockers`.
 
-## Client object
+## Check if token is accepted
 
-```js
-const lockerClient = require('unicrypt-locker');
-const client = new lockerClient.Client(provider, lockerClient.TOKEN_LOCKER, lockerClient.DEVNET);
-```
+`client.isTokenAccepted(mint)` -- returns a boolean that indicates
+it the token is possible to lock. Always returns `true` for token locker.
 
-* `provider` -- as always
-* `lockerClient.TOKEN_LOCKER` or `lockerClient.LP_LOCKER`
-* `lockerClient.DEVNET` or `lockerClient.LOCALNET` -- the 3rd argument is irrelevant for now;
-if omitted, `DEVNET` is the default
-
-The following methods use the same arguments as functions described above except the ones omitted.
-
-- `client.createLocker(args)`
-- `client.getLockers()`
-- `client.getLockersOwnerBy(owner)`
-- `client.relock(unlockDate)`
-- `client.transferOwnership(args)`
-- `client.incrementLock(args)`
-- `client.withdrawFunds(args)`
-- `client.splitLocker(args)`
-- `client.closeLocker(args)`
-- `client.isMintWhitelisted(mint)`
-- `client.vaultAuthorityAddress(locker)`
+* `mint` -- SPL token address.
