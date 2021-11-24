@@ -2,7 +2,10 @@ use std::ops::DerefMut;
 
 use anchor_lang::{
     prelude::*,
-    solana_program::{self, log::sol_log_64},
+    solana_program::{
+        self,
+        log::{sol_log, sol_log_64},
+    },
     AccountsClose,
 };
 use anchor_spl::{
@@ -95,6 +98,8 @@ pub mod locker {
             fee_paid: false,
         };
 
+        sol_log("Initialize mint info");
+
         Ok(())
     }
 
@@ -138,13 +143,11 @@ pub mod locker {
         }
 
         let lock_fee = if should_pay_in_tokens(config, mint_info, args.fee_in_sol) {
-            let fee_wallet: Account<'info, TokenAccount> =
-                Account::try_from(&ctx.accounts.fee_wallet)?;
             FeeInTokens {
                 config,
                 funding_wallet: &mut ctx.accounts.funding_wallet,
                 funding_wallet_authority: &ctx.accounts.funding_wallet_authority,
-                fee_wallet: &fee_wallet,
+                fee_wallet: &ctx.accounts.fee_token_wallet,
                 amount: args.amount,
                 token_program: &ctx.accounts.token_program,
             }
@@ -591,6 +594,8 @@ pub struct CreateLocker<'info> {
     vault: Account<'info, TokenAccount>,
     #[account(mut)]
     fee_wallet: AccountInfo<'info>,
+    #[account(mut)]
+    fee_token_wallet: Account<'info, TokenAccount>,
     #[account(
         mut,
         seeds = [

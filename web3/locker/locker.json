@@ -153,6 +153,11 @@
           "isSigner": false
         },
         {
+          "name": "feeTokenWallet",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
           "name": "mintInfo",
           "isMut": true,
           "isSigner": false
