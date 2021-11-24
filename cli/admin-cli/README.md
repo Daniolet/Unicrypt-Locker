@@ -1,10 +1,10 @@
 ## Init Country List
 
 ```
-cargo run -p country-list-cli --
+cargo run -p admin-cli --
 --cluster localnet
 --program-id <...>
 --payer ~/.config/solana/id.json # default value
-init
---countries ./countries.csv
+country-list init
+--countries './Country List.csv'
 ```

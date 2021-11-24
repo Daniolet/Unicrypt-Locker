@@ -502,7 +502,8 @@ pub struct Locker {
     deposited_amount: u64,
     vault: Pubkey,
     vault_bump: u8,
-    // `creator` and `original_unlock_date` help to generate PDA
+    // `creator` and `original_unlock_date` help to re-generate PDA
+    // from client
     creator: Pubkey,
     original_unlock_date: i64,
     bump: u8,
@@ -675,6 +676,8 @@ pub struct WithdrawFunds<'info> {
         constraint = locker.owner == owner.key()
     )]
     owner: AccountInfo<'info>,
+    /// This authority allows the program to sign token transfer
+    /// back to target wallet.
     vault_authority: AccountInfo<'info>,
     #[account(
         mut,
@@ -708,6 +711,8 @@ pub struct SplitLocker<'info> {
         constraint = old_locker.owner == old_owner.key()
     )]
     old_owner: AccountInfo<'info>,
+    /// This authority allows the program to sign token transfer
+    /// back to target wallet.
     old_vault_authority: AccountInfo<'info>,
     #[account(
         mut,
@@ -728,6 +733,8 @@ pub struct SplitLocker<'info> {
     )]
     new_locker: ProgramAccount<'info, Locker>,
     new_owner: AccountInfo<'info>,
+    /// This authority allows the program to sign token transfer
+    /// back to target wallet.
     #[account(
         seeds = [
             new_locker.key().as_ref()
@@ -745,6 +752,7 @@ pub struct SplitLocker<'info> {
     system_program: Program<'info, System>,
 }
 
+/// For test purposes only!
 #[derive(Accounts)]
 pub struct CloseLocker<'info> {
     #[account(mut)]
@@ -754,6 +762,8 @@ pub struct CloseLocker<'info> {
         constraint = locker.owner == owner.key()
     )]
     owner: AccountInfo<'info>,
+    /// This authority allows the program to sign token transfer
+    /// back to target wallet.
     vault_authority: AccountInfo<'info>,
     #[account(
         mut,
