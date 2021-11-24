@@ -132,8 +132,6 @@ class Client {
       this.provider, fundingWalletAccount.mint, configAccount.feeWallet
     );
 
-    const finalFeeWallet = args.feeInSol ? configAccount.feeWallet : feeTokenWallet;
-
     await this.program.rpc.createLocker(
       {
         unlockDate: args.unlockDate,
@@ -153,7 +151,8 @@ class Client {
           vaultAuthority,
           fundingWalletAuthority: args.fundingWalletAuthority,
           fundingWallet: args.fundingWallet,
-          feeWallet: finalFeeWallet,
+          feeWallet: configAccount.feeWallet,
+          feeTokenWallet,
           mintInfo,
           countryBanlist: configAccount.countryList,
           config,
