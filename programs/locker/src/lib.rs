@@ -107,6 +107,8 @@ pub mod locker {
         ctx: Context<'_, '_, '_, 'info, CreateLocker<'info>>,
         args: CreateLockerArgs,
     ) -> Result<()> {
+        sol_log("Create locker: start");
+
         let now = ctx.accounts.clock.unix_timestamp;
         require!(args.unlock_date > now, UnlockInThePast);
         // prevents errors when timestamp entered as milliseconds
