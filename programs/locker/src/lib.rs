@@ -592,7 +592,8 @@ pub struct CreateLocker<'info> {
     vault_authority: AccountInfo<'info>,
     #[account(
         mut,
-        constraint = vault.mint == funding_wallet.mint
+        constraint = vault.mint == funding_wallet.mint,
+        constraint = vault.owner == vault_authority.key()
     )]
     vault: Account<'info, TokenAccount>,
     #[account(mut)]
