@@ -1,5 +1,5 @@
 {
-  "version": "0.0.0",
+  "version": "0.1.0",
   "name": "locker",
   "instructions": [
     {
@@ -115,7 +115,7 @@
         {
           "name": "locker",
           "isMut": true,
-          "isSigner": false
+          "isSigner": true
         },
         {
           "name": "creator",
@@ -520,18 +520,6 @@
           {
             "name": "vaultBump",
             "type": "u8"
-          },
-          {
-            "name": "creator",
-            "type": "publicKey"
-          },
-          {
-            "name": "originalUnlockDate",
-            "type": "i64"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
           }
         ]
       }
@@ -646,10 +634,6 @@
             "type": {
               "option": "i64"
             }
-          },
-          {
-            "name": "lockerBump",
-            "type": "u8"
           },
           {
             "name": "vaultBump",
