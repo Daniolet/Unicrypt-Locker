@@ -171,9 +171,6 @@ pub mod locker {
             deposited_amount: amount_to_lock,
             vault: ctx.accounts.vault.key(),
             vault_bump: args.vault_bump,
-            creator: ctx.accounts.creator.key(),
-            original_unlock_date: args.unlock_date,
-            bump: args.locker_bump,
         };
 
         TokenTransfer {
@@ -375,9 +372,6 @@ pub mod locker {
             deposited_amount: args.amount,
             vault: ctx.accounts.new_vault.key(),
             vault_bump: args.vault_bump,
-            creator: ctx.accounts.old_owner.key(),
-            original_unlock_date: old_locker.current_unlock_date,
-            bump: args.locker_bump,
         };
 
         Ok(())
@@ -504,11 +498,6 @@ pub struct Locker {
     deposited_amount: u64,
     vault: Pubkey,
     vault_bump: u8,
-    // `creator` and `original_unlock_date` help to re-generate PDA
-    // from client
-    creator: Pubkey,
-    original_unlock_date: i64,
-    bump: u8,
 }
 
 impl Locker {
@@ -556,7 +545,6 @@ pub struct CreateLockerArgs {
     unlock_date: i64,
     country_code: String,
     start_emission: Option<i64>,
-    locker_bump: u8,
     vault_bump: u8,
     fee_in_sol: bool,
 }
@@ -567,12 +555,6 @@ pub struct CreateLocker<'info> {
     #[account(
         init,
         payer = creator,
-        seeds = [
-            creator.key().as_ref(),
-            args.unlock_date.to_be_bytes().as_ref(),
-            args.amount.to_be_bytes().as_ref(),
-        ],
-        bump = args.locker_bump,
         space = Locker::LEN,
     )]
     locker: ProgramAccount<'info, Locker>,

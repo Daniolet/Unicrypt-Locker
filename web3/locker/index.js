@@ -80,18 +80,11 @@ class Client {
   }
 
   async createLocker(args) {
-    const [locker, lockerBump] = await anchor.web3.PublicKey.findProgramAddress(
-      [
-        args.creator.toBytes(),
-        args.unlockDate.toArray('be', 8),
-        args.amount.toArray('be', 8)
-      ],
-      this.program.programId
-    );
+    const locker = anchor.web3.Keypair.generate();
 
     const [vaultAuthority, vaultBump] = await anchor.web3.PublicKey.findProgramAddress(
       [
-        locker.toBytes()
+        locker.publicKey.toBytes()
       ],
       this.program.programId,
     );
@@ -121,7 +114,6 @@ class Client {
     await this.program.rpc.createLocker(
       {
         unlockDate: args.unlockDate,
-        lockerBump,
         vaultBump,
         countryCode: args.countryCode,
         startEmission: args.startEmission,
@@ -130,7 +122,7 @@ class Client {
       },
       {
         accounts: {
-          locker,
+          locker: locker.publicKey,
           creator: args.creator,
           owner: args.owner,
           vault: vault.publicKey,
@@ -150,11 +142,11 @@ class Client {
         instructions: createTokenAccountInstrs
           .concat(initMintInfoInstrs)
           .concat(createAssociatedTokenAccountInstrs),
-        signers: [vault],
+        signers: [vault, locker],
       }
     );
 
-    return locker;
+    return locker.publicKey;
   }
 
   async getLockers() {
@@ -476,18 +468,10 @@ async function vaultAuthorityAddress(provider, locker, cluster) {
 async function createLocker(provider, args, cluster) {
   const program = initProgram(provider, cluster);
 
-  const [locker, lockerBump] = await anchor.web3.PublicKey.findProgramAddress(
-    [
-      args.creator.toBytes(),
-      args.unlockDate.toArray('be', 8),
-      args.amount.toArray('be', 8)
-    ],
-    program.programId
-  );
-
+  const locker = anchor.web3.Keypair.generate();
   const [vaultAuthority, vaultBump] = await anchor.web3.PublicKey.findProgramAddress(
     [
-      locker.toBytes()
+      locker.publicKey.toBytes()
     ],
     program.programId,
   );
@@ -519,7 +503,6 @@ async function createLocker(provider, args, cluster) {
   await program.rpc.createLocker(
     {
       unlockDate: args.unlockDate,
-      lockerBump,
       vaultBump,
       countryCode: args.countryCode,
       startEmission: args.startEmission,
@@ -528,7 +511,7 @@ async function createLocker(provider, args, cluster) {
     },
     {
       accounts: {
-        locker,
+        locker: locker.publicKey,
         creator: args.creator,
         owner: args.owner,
         vault: vault.publicKey,
@@ -547,11 +530,11 @@ async function createLocker(provider, args, cluster) {
       instructions: createTokenAccountInstrs
         .concat(initMintInfoInstrs)
         .concat(createAssociatedTokenAccountInstrs),
-      signers: [vault],
+      signers: [vault, locker],
     }
   );
 
-  return locker;
+  return locker.publicKey;
 }
 
 async function getLockers(provider, cluster, programName) {

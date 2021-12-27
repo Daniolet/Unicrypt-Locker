@@ -104,11 +104,9 @@ describe('locker', () => {
     console.log('Locker: ', lockerAccount);
 
     assert.ok(lockerAccount.account.owner.equals(creator));
-    assert.ok(lockerAccount.account.creator.equals(creator));
     assert.deepStrictEqual(lockerAccount.account.startEmission, null);
     assert.deepStrictEqual(lockerAccount.account.countryCode, [82, 85]);
     assert.ok(lockerAccount.account.currentUnlockDate.eq(unlockDate));
-    assert.ok(lockerAccount.account.originalUnlockDate.eq(unlockDate));
 
     const fundingWalletAccount = await serumCmn.getTokenAccount(provider, fundingWallet);
     assert.ok(fundingWalletAccount.amount.eqn(1000));
@@ -148,7 +146,6 @@ describe('locker', () => {
     });
 
     const lockerAccountAfter = await program.account.locker.fetch(lockerAccountBefore.publicKey);
-    assert.ok(!lockerAccountAfter.currentUnlockDate.eq(lockerAccountAfter.originalUnlockDate));
     assert.ok(lockerAccountAfter.currentUnlockDate.eq(newUnlockDate));
   });
 
