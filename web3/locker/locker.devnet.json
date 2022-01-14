@@ -510,6 +510,12 @@
             }
           },
           {
+            "name": "lastWithdraw",
+            "type": {
+              "option": "i64"
+            }
+          },
+          {
             "name": "depositedAmount",
             "type": "u64"
           },
