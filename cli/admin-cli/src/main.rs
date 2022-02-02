@@ -158,6 +158,11 @@ enum LockerCmd {
     },
     /// Show config for program.
     ShowConfig {},
+    /// Show locker setup.
+    ShowLocker {
+        #[structopt(long)]
+        locker: Pubkey,
+    },
 }
 
 fn main() -> Result<()> {
@@ -318,6 +323,10 @@ fn main() -> Result<()> {
 
                 let config: locker::Config = client.account(config)?;
                 println!("{:#?}", config);
+            }
+            LockerCmd::ShowLocker { locker } => {
+                let locker: locker::Locker = client.account(locker)?;
+                println!("{:#?}", locker);
             }
         },
     }

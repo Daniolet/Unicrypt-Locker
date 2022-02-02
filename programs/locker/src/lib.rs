@@ -158,7 +158,10 @@ pub mod locker {
             0
         };
 
-        let amount_to_lock = args.amount - lock_fee;
+        let amount_to_lock = args
+            .amount
+            .checked_sub(lock_fee)
+            .ok_or(ErrorCode::IntegerOverflow)?;
         require!(amount_to_lock > 0, NothingToLock);
 
         let locker = ctx.accounts.locker.deref_mut();
@@ -168,6 +171,7 @@ pub mod locker {
             country_code: country_list::string_to_byte_array(&args.country_code),
             current_unlock_date: args.unlock_date,
             start_emission: args.start_emission,
+            last_withdraw: None,
             deposited_amount: amount_to_lock,
             vault: ctx.accounts.vault.key(),
             vault_bump: args.vault_bump,
@@ -231,7 +235,9 @@ pub mod locker {
             }
             .pay()?;
 
-            amount - lock_fee
+            amount
+                .checked_sub(lock_fee)
+                .ok_or(ErrorCode::IntegerOverflow)?
         } else {
             amount
         };
@@ -256,14 +262,22 @@ pub mod locker {
 
     pub fn withdraw_funds(ctx: Context<WithdrawFunds>, amount: u64) -> Result<()> {
         let now = ctx.accounts.clock.unix_timestamp;
-        let locker = &ctx.accounts.locker;
+        let locker = &mut ctx.accounts.locker;
         let vault = &mut ctx.accounts.vault;
 
         let amount_to_transfer = match locker.start_emission {
             Some(start_emission) => {
-                let clamped_time = now.clamp(start_emission, locker.current_unlock_date);
-                let elapsed = clamped_time - start_emission;
-                let full_period = locker.current_unlock_date - start_emission;
+                require!(now >= start_emission, TooEarlyToWithdraw);
+
+                let start = locker.last_withdraw.unwrap_or(start_emission);
+                let clamped_time = now.clamp(start, locker.current_unlock_date);
+                let elapsed = clamped_time
+                    .checked_sub(start)
+                    .ok_or(ErrorCode::IntegerOverflow)?;
+                let full_period = locker
+                    .current_unlock_date
+                    .checked_sub(start)
+                    .ok_or(ErrorCode::IntegerOverflow)?;
                 require!(full_period > 0, InvalidPeriod);
 
                 sol_log_64(
@@ -271,7 +285,7 @@ pub mod locker {
                     elapsed as u64,
                     full_period as u64,
                     now as u64,
-                    start_emission as u64,
+                    start as u64,
                 );
 
                 mul_div(locker.deposited_amount, elapsed, full_period as u64)
@@ -300,6 +314,8 @@ pub mod locker {
             signers: Some(signers),
         }
         .make()?;
+
+        locker.last_withdraw = Some(now);
 
         vault.reload()?;
         if vault.amount == 0 {
@@ -369,6 +385,7 @@ pub mod locker {
             country_code: old_locker.country_code,
             current_unlock_date: old_locker.current_unlock_date,
             start_emission: old_locker.start_emission,
+            last_withdraw: None,
             deposited_amount: args.amount,
             vault: ctx.accounts.new_vault.key(),
             vault_bump: args.vault_bump,
@@ -490,11 +507,13 @@ pub struct UpdateConfig<'info> {
 }
 
 #[account]
+#[derive(Debug)]
 pub struct Locker {
     owner: Pubkey,
     country_code: [u8; 2],
     current_unlock_date: i64,
     start_emission: Option<i64>,
+    last_withdraw: Option<i64>,
     deposited_amount: u64,
     vault: Pubkey,
     vault_bump: u8,
@@ -932,7 +951,10 @@ impl TokenTransfer<'_, '_> {
         sol_log_64(amount_before, amount_after, self.amount, 0, 0);
 
         require!(
-            amount_before - amount_after == self.amount,
+            amount_before
+                .checked_sub(amount_after)
+                .ok_or(ErrorCode::IntegerOverflow)?
+                == self.amount,
             InvalidAmountTransferred
         );
 
