@@ -158,7 +158,10 @@ pub mod locker {
             0
         };
 
-        let amount_to_lock = args.amount - lock_fee;
+        let amount_to_lock = args
+            .amount
+            .checked_sub(lock_fee)
+            .ok_or(ErrorCode::IntegerOverflow)?;
         require!(amount_to_lock > 0, NothingToLock);
 
         let locker = ctx.accounts.locker.deref_mut();
@@ -232,7 +235,9 @@ pub mod locker {
             }
             .pay()?;
 
-            amount - lock_fee
+            amount
+                .checked_sub(lock_fee)
+                .ok_or(ErrorCode::IntegerOverflow)?
         } else {
             amount
         };
@@ -266,8 +271,13 @@ pub mod locker {
 
                 let start = locker.last_withdraw.unwrap_or(start_emission);
                 let clamped_time = now.clamp(start, locker.current_unlock_date);
-                let elapsed = clamped_time - start;
-                let full_period = locker.current_unlock_date - start;
+                let elapsed = clamped_time
+                    .checked_sub(start)
+                    .ok_or(ErrorCode::IntegerOverflow)?;
+                let full_period = locker
+                    .current_unlock_date
+                    .checked_sub(start)
+                    .ok_or(ErrorCode::IntegerOverflow)?;
                 require!(full_period > 0, InvalidPeriod);
 
                 sol_log_64(
@@ -941,7 +951,10 @@ impl TokenTransfer<'_, '_> {
         sol_log_64(amount_before, amount_after, self.amount, 0, 0);
 
         require!(
-            amount_before - amount_after == self.amount,
+            amount_before
+                .checked_sub(amount_after)
+                .ok_or(ErrorCode::IntegerOverflow)?
+                == self.amount,
             InvalidAmountTransferred
         );
 
