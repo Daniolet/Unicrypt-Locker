@@ -262,6 +262,8 @@ pub mod locker {
 
         let amount_to_transfer = match locker.start_emission {
             Some(start_emission) => {
+                require!(now >= start_emission, TooEarlyToWithdraw);
+
                 let start = locker.last_withdraw.unwrap_or(start_emission);
                 let clamped_time = now.clamp(start, locker.current_unlock_date);
                 let elapsed = clamped_time - start;
@@ -495,6 +497,7 @@ pub struct UpdateConfig<'info> {
 }
 
 #[account]
+#[derive(Debug)]
 pub struct Locker {
     owner: Pubkey,
     country_code: [u8; 2],
