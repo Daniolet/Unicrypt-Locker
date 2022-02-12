@@ -41,6 +41,8 @@ pub mod locker {
     use super::*;
 
     pub fn init_config(ctx: Context<InitConfig>, args: CreateConfigArgs) -> Result<()> {
+        sol_log("Init config");
+
         let config = ctx.accounts.config.deref_mut();
 
         *config = Config {
@@ -59,6 +61,8 @@ pub mod locker {
     }
 
     pub fn update_config(ctx: Context<UpdateConfig>, args: UpdateConfigArgs) -> Result<()> {
+        sol_log("Update config");
+
         let config = &mut ctx.accounts.config;
         let UpdateConfigArgs {
             fee_in_sol,
@@ -84,8 +88,13 @@ pub mod locker {
     }
 
     pub fn init_mint_info(ctx: Context<InitMintInfo>, bump: u8) -> Result<()> {
+        sol_log("Init mint info");
+
         let mint_info = ctx.accounts.mint_info.deref_mut();
 
+        // We distinguish token and LP lockers here.
+        // We require admin rights to init mint info for LP lockers
+        // because we need to control available mints for lockers.
         if ctx.accounts.config.mint_info_permissioned {
             require!(
                 ctx.accounts.payer.key() == ctx.accounts.config.admin,
@@ -98,8 +107,6 @@ pub mod locker {
             fee_paid: false,
         };
 
-        sol_log("Initialize mint info");
-
         Ok(())
     }
 
@@ -111,19 +118,26 @@ pub mod locker {
 
         let now = ctx.accounts.clock.unix_timestamp;
         require!(args.unlock_date > now, UnlockInThePast);
-        // prevents errors when timestamp entered as milliseconds
+        // Prevents errors when timestamp entered as milliseconds.
         require!(args.unlock_date < 10000000000, InvalidTimestamp);
 
         let config = &ctx.accounts.config;
 
+        // Checking here that args has no linear emission if it's disabled
+        // for the given locker type.
         if !config.has_linear_emission {
             require!(args.start_emission.is_none(), LinearEmissionDisabled);
         }
 
         if let Some(start_emission) = args.start_emission {
+            //  now     start_emission     unlock_date
+            // |--------------------------------------> time, seconds
             require!(args.unlock_date > start_emission, InvalidPeriod);
+            require!(start_emission > now, InvalidPeriod);
         }
 
+        // Checking here that country is not banned in country list
+        // we've chosen in locker type config.
         require!(
             ctx.accounts
                 .country_banlist
@@ -131,8 +145,11 @@ pub mod locker {
             InvalidCountry
         );
 
+        sol_log("Create locker: checks passed");
+
         let mint_info = &mut ctx.accounts.mint_info;
 
+        // Check if we should charge the fee in SOL.
         if should_pay_in_sol(config, mint_info, args.fee_in_sol) {
             FeeInSol {
                 fee_wallet: &ctx.accounts.fee_wallet,
@@ -144,6 +161,9 @@ pub mod locker {
             .pay()?;
         }
 
+        sol_log("Create locker: after sol fee");
+
+        // Check if we should charge the fee in locked tokens.
         let lock_fee = if should_pay_in_tokens(config, mint_info, args.fee_in_sol) {
             FeeInTokens {
                 config,
@@ -157,6 +177,8 @@ pub mod locker {
         } else {
             0
         };
+
+        sol_log("Create locker: after token fee");
 
         let amount_to_lock = args
             .amount
@@ -187,10 +209,14 @@ pub mod locker {
         }
         .make()?;
 
+        sol_log("Create locker: finish");
+
         Ok(())
     }
 
     pub fn relock(ctx: Context<Relock>, unlock_date: i64) -> Result<()> {
+        sol_log("Relock");
+
         let locker = &mut ctx.accounts.locker;
 
         require!(
@@ -204,6 +230,8 @@ pub mod locker {
     }
 
     pub fn transfer_ownership(ctx: Context<TransferOwnership>) -> Result<()> {
+        sol_log("Transfer ownership");
+
         let locker = &mut ctx.accounts.locker;
 
         locker.owner = ctx.accounts.new_owner.key();
@@ -212,11 +240,14 @@ pub mod locker {
     }
 
     pub fn increment_lock(ctx: Context<IncrementLock>, amount: u64) -> Result<()> {
+        sol_log("Increment lock");
+
         let locker = &mut ctx.accounts.locker;
         let mint_info = &ctx.accounts.mint_info;
         let config = &ctx.accounts.config;
 
         // 3rd argument is false b/c we do not pay in sol here at all
+        // but we need to check if there's fee in tokens.
         let amount_to_lock = if should_pay_in_tokens(config, mint_info, false) {
             let lock_fee = mul_div(
                 amount,
@@ -252,6 +283,7 @@ pub mod locker {
         }
         .make()?;
 
+        // Increase deposited amount to handle linear emission correctly.
         locker.deposited_amount = locker
             .deposited_amount
             .checked_add(amount_to_lock)
@@ -261,13 +293,24 @@ pub mod locker {
     }
 
     pub fn withdraw_funds(ctx: Context<WithdrawFunds>, amount: u64) -> Result<()> {
+        sol_log("Withdraw funds");
+
         let now = ctx.accounts.clock.unix_timestamp;
         let locker = &mut ctx.accounts.locker;
         let vault = &mut ctx.accounts.vault;
 
         let amount_to_transfer = match locker.start_emission {
             Some(start_emission) => {
+                // If there's linear emission we should check the dates
+                // and calculate the maximum amount we can withdraw right now.
+
                 require!(now >= start_emission, TooEarlyToWithdraw);
+
+                //  start_emission                    unlock_date
+                // |------------x------------------------------>
+                //              ^ here is the point we're in now and we should calculate
+                //                this part of the total deposited amount available for
+                //                withdraws
 
                 let start = locker.last_withdraw.unwrap_or(start_emission);
                 let clamped_time = now.clamp(start, locker.current_unlock_date);
@@ -293,6 +336,9 @@ pub mod locker {
                     .min(amount)
             }
             None => {
+                // If there's no linear emission things are much simpler,
+                // just check the dates and withdraw either the requested amount
+                // or just the amount left in the vault
                 require!(now > locker.current_unlock_date, TooEarlyToWithdraw);
                 amount.min(vault.amount)
             }
@@ -301,6 +347,7 @@ pub mod locker {
         require!(amount_to_transfer > 0, InvalidAmount);
         require!(amount_to_transfer <= vault.amount, InvalidAmount);
 
+        // Signing the transfer from the vault.
         let locker_key = locker.key();
         let seeds = &[locker_key.as_ref(), &[locker.vault_bump]];
         let signers = &[&seeds[..]];
@@ -315,10 +362,15 @@ pub mod locker {
         }
         .make()?;
 
+        // Last withdraw allows us to track previous withdraws to
+        // correclty calculate amount available to withdraw with
+        // linear emission.
         locker.last_withdraw = Some(now);
 
         vault.reload()?;
         if vault.amount == 0 {
+            // When we have withdrawn everything we should close
+            // vault and locker accounts.
             let cpi_ctx = CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 CloseAccount {
@@ -337,6 +389,8 @@ pub mod locker {
     }
 
     pub fn split_locker(ctx: Context<SplitLocker>, args: SplitLockerArgs) -> Result<()> {
+        sol_log("Split locker");
+
         require!(args.amount > 0, InvalidAmount);
 
         let new_locker = ctx.accounts.new_locker.deref_mut();
@@ -345,6 +399,7 @@ pub mod locker {
 
         require!(args.amount <= old_vault.amount, InvalidAmount);
 
+        // Signing the transfer from the old vault to the new vault.
         let locker_key = old_locker.key();
         let seeds = &[locker_key.as_ref(), &[old_locker.vault_bump]];
         let signers = &[&seeds[..]];
@@ -359,6 +414,7 @@ pub mod locker {
         }
         .make()?;
 
+        // Decrease the deposited amount for linear emission calculations.
         old_locker.deposited_amount = old_locker
             .deposited_amount
             .checked_sub(args.amount)
@@ -366,6 +422,8 @@ pub mod locker {
 
         old_vault.reload()?;
         if old_vault.amount == 0 {
+            // When we have withdrawn everything we should close
+            // vault and locker accounts.
             let cpi_ctx = CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 CloseAccount {
@@ -394,7 +452,11 @@ pub mod locker {
         Ok(())
     }
 
+    /// For the test purposes -- allows to close lockers.
+    /// TODO: hide it behind feature flag
     pub fn close_locker(ctx: Context<CloseLocker>) -> Result<()> {
+        sol_log("Close locker");
+
         let locker = &ctx.accounts.locker;
         let vault = &mut ctx.accounts.vault;
 
@@ -432,13 +494,22 @@ pub mod locker {
 #[account]
 #[derive(Debug)]
 pub struct Config {
+    /// Admin account.
     admin: Pubkey,
+    /// Fee in SOL tokens (not the lamports!).
     fee_in_sol: u64,
+    /// Numerator / Denominator = fee.
+    /// i.e. 35 / 10000 = 0.035%
     fee_in_token_numerator: u64,
     fee_in_token_denominator: u64,
+    /// Whether mint info can be created by anyone or just admin.
     mint_info_permissioned: bool,
+    /// Whether we should allow the lockers with linear emission.
     has_linear_emission: bool,
+    /// SOL wallet where we send the fees in SOL and the fees in
+    /// tokens via token accounts associated with this account.
     fee_wallet: Pubkey,
+    /// List of countries under our control.
     country_list: Pubkey,
     bump: u8,
 }
@@ -523,6 +594,10 @@ impl Locker {
     pub const LEN: usize = std::mem::size_of::<Self>() + 8;
 }
 
+/// Mint info tracks the fees paid for a given mint.
+/// If the fee has been paid we do not charge it again.
+/// There's a twist for LP lockers -- MintInfo accounts
+/// can be created by admins only.
 #[account]
 pub struct MintInfo {
     bump: u8,
