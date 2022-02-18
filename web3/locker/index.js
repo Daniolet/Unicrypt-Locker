@@ -45,6 +45,12 @@ class Client {
     return [config, bump];
   }
 
+  async fetchConfig() {
+    const [config, _] = await this.findConfigAddress();
+    const configAccount = await this.program.account.config.fetch(config);
+    return configAccount;
+  }
+
   async vaultAuthorityAddress(locker) {
     return await anchor.web3.PublicKey.createProgramAddress(
       [
