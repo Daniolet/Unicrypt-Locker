@@ -133,7 +133,7 @@ pub mod locker {
             //  now     start_emission     unlock_date
             // |--------------------------------------> time, seconds
             require!(args.unlock_date > start_emission, InvalidPeriod);
-            require!(start_emission > now, InvalidPeriod);
+            require!(start_emission >= now, InvalidPeriod);
         }
 
         // Checking here that country is not banned in country list
@@ -300,6 +300,9 @@ pub mod locker {
         let vault = &mut ctx.accounts.vault;
 
         let amount_to_transfer = match locker.start_emission {
+            // Allowing to withdraw everything after linear schedule
+            // (this is helpful in case of lock increments).
+            Some(_start_emission) if now > locker.current_unlock_date => amount.min(vault.amount),
             Some(start_emission) => {
                 // If there's linear emission we should check the dates
                 // and calculate the maximum amount we can withdraw right now.
@@ -307,10 +310,12 @@ pub mod locker {
                 require!(now >= start_emission, TooEarlyToWithdraw);
 
                 //  start_emission                    unlock_date
-                // |------------x------------------------------>
-                //              ^ here is the point we're in now and we should calculate
-                //                this part of the total deposited amount available for
-                //                withdraws
+                // |----x-------x------------------------------>
+                //      ^       ^ here is the point we're in now and we should calculate
+                //      ^         this part of the total deposited amount available for
+                //      ^         withdraws
+                //      ^
+                //      ^ we could withdraw here so that point is saved as `last_withdraw`
 
                 let start = locker.last_withdraw.unwrap_or(start_emission);
                 let clamped_time = now.clamp(start, locker.current_unlock_date);
@@ -871,9 +876,57 @@ where
     let b = U64F64::from_num(b);
     let denominator = U64F64::from_num(denominator);
 
-    a.checked_mul(b)
-        .and_then(|r| r.checked_div(denominator))
+    let max = a.max(b);
+    let min = a.min(b);
+
+    // avoiding overflow inside of the computation so intermediate
+    // values are bound by max value
+    max.checked_div(denominator)
+        .and_then(|r| r.checked_mul(min))
         .and_then(|r| r.floor().checked_as::<u64>())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// floor(a * b / denominator)
+    pub fn mul_div_old<SrcA, SrcB, SrcD>(a: SrcA, b: SrcB, denominator: SrcD) -> Option<u64>
+    where
+        SrcA: fixed::traits::ToFixed,
+        SrcB: fixed::traits::ToFixed,
+        SrcD: fixed::traits::ToFixed,
+    {
+        use fixed::types::U64F64;
+
+        let a = U64F64::from_num(a);
+        let b = U64F64::from_num(b);
+        let denominator = U64F64::from_num(denominator);
+
+        a.checked_mul(b)
+            .and_then(|r| r.checked_div(denominator))
+            .and_then(|r| r.floor().checked_as::<u64>())
+    }
+
+    // this values cause mul_div to overflow
+    // they're erroneous and now it's not possible to have such values
+    // but we sanity check overflows here just in case
+    const AMOUNT: u64 = 90000000000;
+    const ELAPSED: u64 = 1644602094;
+    const FULL_PERIOD: u64 = 1644606000;
+
+    #[test]
+    fn mul_div_do_not_overflows() {
+        let r = mul_div(AMOUNT, ELAPSED, FULL_PERIOD);
+        assert!(r.is_some());
+    }
+
+    #[test]
+    fn mul_div_impls_are_equal() {
+        let r1 = mul_div(1000, 5, 1000);
+        let r2 = mul_div_old(1000, 5, 1000);
+        assert!(r1 == r2);
+    }
 }
 
 fn should_pay_in_sol(config: &Config, mint_info: &MintInfo, fee_in_sol: bool) -> bool {
